@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+bin/
+obj/
+publish/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+
+# DB files
+*.db
+
+# Archives
+*.zip
+
+# Lock files (optional - keep if you want reproducible builds)
+# package-lock.json

@@ -1,0 +1,12 @@
+<template>
+  <a-config-provider :theme="{ token: { colorPrimary: '#1a4fba', borderRadius: 8, fontFamily: 'Inter, sans-serif' } }">
+    <router-view />
+  </a-config-provider>
+</template>
+
+<script setup>
+import { onMounted } from 'vue'
+import { useLibrarianStore } from './stores/librarian'
+const store = useLibrarianStore()
+onMounted(() => store.loadAll())
+</script>

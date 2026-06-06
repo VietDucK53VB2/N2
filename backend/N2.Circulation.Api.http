@@ -1,0 +1,6 @@
+@N2.Circulation.Api_HostAddress = http://localhost:5089
+
+GET {{N2.Circulation.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
