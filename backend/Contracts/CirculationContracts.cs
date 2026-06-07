@@ -13,6 +13,8 @@ public sealed record BorrowRequest
     public DateTime? BorrowedAt { get; init; }
 
     public DateTime? DueAt { get; init; }
+
+    public int Quantity { get; init; } = 1;
 }
 
 public sealed record ReturnRequest
@@ -26,6 +28,24 @@ public sealed record ReturnRequest
     public string? CardNumber { get; init; }
 
     public DateTime? ReturnedAt { get; init; }
+}
+
+public sealed record ReturnApprovalRequest
+{
+    public string Condition { get; init; } = "Good";
+
+    public string? ConditionNote { get; init; }
+}
+
+public sealed record BookReviewRequest
+{
+    public string? UserId { get; init; }
+
+    public string? CardNumber { get; init; }
+
+    public int Rating { get; init; }
+
+    public string? Comment { get; init; }
 }
 
 public sealed record BorrowResponse

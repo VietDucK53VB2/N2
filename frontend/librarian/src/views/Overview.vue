@@ -88,6 +88,7 @@ const stats = computed(() => [
   { title: 'Tổng phiếu', value: store.transactions.length, color: '#047857', bgColor: '#e6f7ef', icon: FileTextOutlined },
   { title: 'Chờ duyệt', value: store.pendingTx.length, color: '#d97706', bgColor: '#fef3c7', icon: ClockCircleOutlined },
   { title: 'Đang mượn', value: store.activeTx.length, color: '#2563eb', bgColor: '#dbeafe', icon: BookOutlined },
+  { title: 'Chờ trả', value: store.returnPendingTx.length, color: '#7c3aed', bgColor: '#ede9fe', icon: ClockCircleOutlined },
   { title: 'Quá hạn', value: store.overdueTx.length, color: '#dc2626', bgColor: '#fee2e2', icon: WarningOutlined },
   { title: 'Đã trả', value: store.returnedTx.length, color: '#0f766e', bgColor: '#ccfbf1', icon: CheckCircleOutlined },
   { title: 'Phí chưa thu', value: store.totalUnpaid.toLocaleString() + 'đ', color: '#b45309', bgColor: '#fef3c7', icon: DollarOutlined }
@@ -105,15 +106,15 @@ const recentTx = computed(() => [...store.transactions].sort((a, b) => new Date(
 
 const activities = computed(() =>
   [...store.transactions].sort((a, b) => new Date(b.BorrowedAt) - new Date(a.BorrowedAt)).slice(0, 8).map(t => ({
-    text: `${t.CardNumber || '—'} — ${t.Status === 'Returned' ? 'Đã trả sách' : t.Status === 'Overdue' ? 'Quá hạn' : t.Status === 'Pending' ? 'Chờ duyệt' : 'Mượn sách'}`,
+    text: `${t.CardNumber || '—'} — ${t.Status === 'Returned' ? 'Đã trả sách' : t.Status === 'ReturnPending' ? 'Chờ xác nhận trả' : t.Status === 'Overdue' ? 'Quá hạn' : t.Status === 'Pending' ? 'Chờ duyệt' : 'Mượn sách'}`,
     time: fmtDate(t.BorrowedAt),
-    color: t.Status === 'Returned' ? 'green' : t.Status === 'Overdue' ? 'red' : t.Status === 'Pending' ? 'orange' : 'blue'
+    color: t.Status === 'Returned' ? 'green' : t.Status === 'ReturnPending' ? 'purple' : t.Status === 'Overdue' ? 'red' : t.Status === 'Pending' ? 'orange' : 'blue'
   }))
 )
 
 function fmtDate(d) { return d ? dayjs(d).format('DD/MM/YYYY') : '—' }
-function statusColor(s) { return s === 'Pending' ? 'orange' : s === 'Overdue' ? 'red' : s === 'Returned' ? 'green' : 'blue' }
-function statusLabel(s) { return s === 'Pending' ? 'Chờ duyệt' : s === 'Overdue' ? 'Quá hạn' : s === 'Returned' ? 'Đã trả' : 'Đang mượn' }
+function statusColor(s) { return s === 'Pending' ? 'orange' : s === 'ReturnPending' ? 'purple' : s === 'Overdue' ? 'red' : s === 'Returned' ? 'green' : 'blue' }
+function statusLabel(s) { return s === 'Pending' ? 'Chờ duyệt' : s === 'ReturnPending' ? 'Chờ trả' : s === 'Overdue' ? 'Quá hạn' : s === 'Returned' ? 'Đã trả' : 'Đang mượn' }
 </script>
 
 <style scoped>

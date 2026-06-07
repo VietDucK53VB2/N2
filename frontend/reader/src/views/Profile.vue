@@ -21,7 +21,7 @@
                 <h3 class="text-h6 font-weight-black">{{ userInfo.fullName }}</h3>
                 <p class="text-body-2 text-grey">{{ roleName }}</p>
               </div>
-              <v-btn class="btn-gradient" prepend-icon="mdi-pencil" @click="editDialog = true">
+              <v-btn class="btn-gradient" prepend-icon="mdi-pencil" @click="openEditDialog">
                 Chỉnh sửa
               </v-btn>
             </div>
@@ -93,7 +93,15 @@
               </v-list-item>
             </v-list>
 
-            <v-btn block class="btn-gradient" size="large" prepend-icon="mdi-credit-card">
+            <v-btn
+              block
+              class="btn-gradient"
+              size="large"
+              prepend-icon="mdi-credit-card"
+              :loading="paying"
+              :disabled="!store.myUnpaidFines.length"
+              @click="payAllFines"
+            >
               Thanh toán ngay
             </v-btn>
             <p class="text-caption text-grey text-center mt-3">
@@ -125,20 +133,29 @@
         <v-card-actions class="pa-4">
           <v-spacer />
           <v-btn variant="text" @click="editDialog = false">Hủy</v-btn>
-          <v-btn class="btn-gradient" @click="editDialog = false">Lưu thay đổi</v-btn>
+          <v-btn class="btn-gradient" @click="saveProfile">Lưu thay đổi</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-snackbar v-model="snackbar" :color="snackbarColor" timeout="3000" location="bottom right">
+      {{ snackbarText }}
+    </v-snackbar>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, reactive } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { payFine } from '@/utils/api'
 import { getInitials, formatDate, formatMoney } from '@/utils/helpers'
 
 const store = useAppStore()
 const editDialog = ref(false)
+const paying = ref(false)
+const snackbar = ref(false)
+const snackbarText = ref('')
+const snackbarColor = ref('success')
 
 const userInfo = computed(() => store.userInfo || {})
 const initials = computed(() => getInitials(userInfo.value.fullName))
@@ -166,8 +183,60 @@ const stats = computed(() => [
 
 const editForm = reactive({ fullName: '', email: '', cardNumber: '' })
 
+function showMessage(text, color = 'success') {
+  snackbarText.value = text
+  snackbarColor.value = color
+  snackbar.value = true
+}
+
+function openEditDialog() {
+  editForm.fullName = userInfo.value.fullName || ''
+  editForm.email = userInfo.value.email || ''
+  editForm.cardNumber = userInfo.value.cardNumber || ''
+  editDialog.value = true
+}
+
+function saveProfile() {
+  const next = {
+    ...userInfo.value,
+    fullName: editForm.fullName?.trim() || userInfo.value.fullName || '',
+    email: editForm.email?.trim() || userInfo.value.email || '',
+    cardNumber: editForm.cardNumber?.trim() || userInfo.value.cardNumber || ''
+  }
+  localStorage.setItem('userInfo', JSON.stringify(next))
+  if (next.cardNumber) localStorage.setItem('readerCard', next.cardNumber)
+  store.userInfo = next
+  editDialog.value = false
+  showMessage('Đã lưu thông tin hồ sơ.')
+  store.loadAll()
+}
+
+async function payAllFines() {
+  if (!store.myUnpaidFines.length) return
+  paying.value = true
+  try {
+    for (const fine of store.myUnpaidFines) {
+      const id = fine.Id || fine.id
+      if (!id) continue
+      const response = await payFine(id)
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        showMessage(data?.message || data?.Message || 'Không thanh toán được phí phạt.', 'error')
+        return
+      }
+    }
+    await store.loadFines()
+    showMessage('Đã thanh toán phí phạt.')
+  } catch {
+    showMessage('Không kết nối được máy chủ. Vui lòng thử lại.', 'error')
+  } finally {
+    paying.value = false
+  }
+}
+
 function copyCard() {
   navigator.clipboard?.writeText(userInfo.value.cardNumber || '')
+  showMessage('Đã sao chép mã thẻ.')
 }
 </script>
 

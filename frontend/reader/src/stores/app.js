@@ -34,12 +34,16 @@ export const useAppStore = defineStore('app', () => {
     return statusOf(transaction) === 'Returned'
   }
 
+  function isReturnPending(transaction) {
+    return statusOf(transaction) === 'ReturnPending'
+  }
+
   function isActiveLoan(transaction) {
-    return isBorrowed(transaction) || isOverdue(transaction)
+    return isBorrowed(transaction) || isOverdue(transaction) || isReturnPending(transaction)
   }
 
   function isFinePaid(fine = {}) {
-    return Boolean(fine.IsPaid || fine.isPaid)
+    return Boolean(fine.IsPaid || fine.isPaid || fine.PaidAt || fine.paidAt)
   }
 
   function cardNumberOf(record = {}) {
@@ -138,7 +142,7 @@ export const useAppStore = defineStore('app', () => {
     books, myTransactions, allTransactions, fines, userInfo, loading,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, totalUnpaidFines,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
     loadBooks, loadMyTransactions, loadAllTransactions, loadFines,
     loadUserInfo, loadAll
   }

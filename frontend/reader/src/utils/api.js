@@ -2,6 +2,7 @@ const ID3_API = 'http://163.223.210.87:5001'
 const N3_LOGIN_URL = 'http://163.223.210.87:80/login'
 const BASE = 'http://163.223.210.87:5000/api/circulation'
 const CATALOG_API = BASE
+const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
 
 export { ID3_API, N3_LOGIN_URL, BASE, CATALOG_API }
 
@@ -61,9 +62,21 @@ export async function authFetch(url, opts = {}) {
   return response
 }
 
+async function authFetchWithFallback(path, opts = {}) {
+  const primary = `${BASE}${path}`
+  const fallback = `${SAME_ORIGIN_BASE}${path}`
+  try {
+    const response = await authFetch(primary, opts)
+    if (response.ok || (response.status >= 400 && response.status < 500)) return response
+  } catch {
+    // Try the hosted N2 API if the gateway is temporarily unavailable.
+  }
+  return authFetch(fallback, opts)
+}
+
 export async function fetchBooks() {
   try {
-    const r = await authFetch(`${CATALOG_API}/books`)
+    const r = await authFetchWithFallback('/books')
     if (!r.ok) return []
     const data = await r.json()
     return Array.isArray(data) ? data.map(normalizeBook) : []
@@ -73,7 +86,7 @@ export async function fetchBooks() {
 export async function fetchTransactions(cardNumber) {
   if (!cardNumber) return []
   try {
-    const r = await authFetch(`${BASE}/transactions?cardNumber=${encodeURIComponent(cardNumber)}`)
+    const r = await authFetchWithFallback(`/transactions?cardNumber=${encodeURIComponent(cardNumber)}&pageSize=200`)
     if (!r.ok) return []
     return await r.json()
   } catch { return [] }
@@ -81,7 +94,7 @@ export async function fetchTransactions(cardNumber) {
 
 export async function fetchAllTransactions() {
   try {
-    const r = await authFetch(`${BASE}/transactions`)
+    const r = await authFetchWithFallback('/transactions?pageSize=200')
     if (!r.ok) return []
     return await r.json()
   } catch { return [] }
@@ -89,26 +102,52 @@ export async function fetchAllTransactions() {
 
 export async function fetchFines() {
   try {
-    const r = await authFetch(`${BASE}/fines`)
+    const r = await authFetchWithFallback('/fines')
     if (!r.ok) return []
     return await r.json()
   } catch { return [] }
 }
 
-export async function borrowBook(cardNumber, bookId) {
-  const r = await authFetch(`${BASE}/borrow`, {
+export async function borrowBook(cardNumber, bookId, quantity = 1) {
+  const r = await authFetchWithFallback('/borrow', {
+    method: 'POST',
+    body: JSON.stringify({ cardNumber, bookId: String(bookId), quantity })
+  })
+  return r
+}
+
+export async function returnBook(cardNumber, bookId) {
+  const r = await authFetchWithFallback('/return', {
     method: 'POST',
     body: JSON.stringify({ cardNumber, bookId: String(bookId) })
   })
   return r
 }
 
-export async function returnBook(cardNumber, bookId) {
-  const r = await authFetch(`${BASE}/return`, {
+export async function returnTransaction(transactionId) {
+  return authFetchWithFallback(`/transactions/${transactionId}/return`, { method: 'POST' })
+}
+
+export async function payFine(fineId) {
+  return authFetchWithFallback(`/fines/${fineId}/pay`, { method: 'POST' })
+}
+
+export async function reviewBook(bookId, { cardNumber, userId, rating, comment = '' }) {
+  return authFetchWithFallback(`/books/${encodeURIComponent(bookId)}/reviews`, {
     method: 'POST',
-    body: JSON.stringify({ cardNumber, bookId: String(bookId) })
+    body: JSON.stringify({ cardNumber, userId, rating, comment })
   })
-  return r
+}
+
+export async function fetchBookReviews(bookId = '') {
+  const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : ''
+  try {
+    const r = await authFetchWithFallback(`/books/reviews${query}`)
+    if (!r.ok) return []
+    return await r.json()
+  } catch {
+    return []
+  }
 }
 
 export async function loadUserProfile() {

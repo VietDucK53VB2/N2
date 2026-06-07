@@ -40,6 +40,10 @@ function isReturned(transaction) {
   return statusOf(transaction) === 'Returned'
 }
 
+function isReturnPending(transaction) {
+  return statusOf(transaction) === 'ReturnPending'
+}
+
 function isActiveLoan(transaction) {
   return isBorrowed(transaction) || isOverdue(transaction)
 }
@@ -68,6 +72,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const borrowedTx = computed(() => transactions.value.filter(isBorrowed))
   const activeTx = computed(() => transactions.value.filter(isActiveLoan))
   const overdueTx = computed(() => transactions.value.filter(isOverdue))
+  const returnPendingTx = computed(() => transactions.value.filter(isReturnPending))
   const returnedTx = computed(() => transactions.value.filter(isReturned))
 
   const unpaidFines = computed(() => fines.value.filter(f => !(f.IsPaid || f.isPaid)))
@@ -84,15 +89,24 @@ export const useLibrarianStore = defineStore('librarian', () => {
   }
   async function approve(id) { const r = await apiFetch(`${CIRC_API}/transactions/${id}/approve`, { method: 'POST' }); if (r.ok) await loadTransactions(); return r }
   async function reject(id) { const r = await apiFetch(`${CIRC_API}/transactions/${id}/reject`, { method: 'POST' }); if (r.ok) await loadTransactions(); return r }
-  async function returnBook(cardNumber, bookId) { const r = await apiFetch(`${CIRC_API}/return`, { method: 'POST', body: JSON.stringify({ cardNumber, bookId }) }); if (r.ok) { await loadTransactions(); await loadFines() } return r }
+  async function requestReturn(cardNumber, bookId) { const r = await apiFetch(`${CIRC_API}/return`, { method: 'POST', body: JSON.stringify({ cardNumber, bookId }) }); if (r.ok) await loadTransactions(); return r }
+  async function approveReturn(id, payload = {}) {
+    const r = await apiFetch(`${CIRC_API}/transactions/${id}/return/approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+    if (r.ok) { await loadTransactions(); await loadFines() }
+    return r
+  }
+  async function rejectReturn(id) { const r = await apiFetch(`${CIRC_API}/transactions/${id}/return/reject`, { method: 'POST' }); if (r.ok) await loadTransactions(); return r }
   async function payFine(id) { const r = await apiFetch(`${CIRC_API}/fines/${id}/pay`, { method: 'POST' }); if (r.ok) await loadFines(); return r }
   async function loadAll() { await Promise.all([loadTransactions(), loadFines()]) }
 
   return {
     transactions, fines, loading,
-    pendingTx, borrowedTx, activeTx, overdueTx, returnedTx,
+    pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isActiveLoan, cardNumberOf, bookIdOf,
-    loadTransactions, loadFines, loadAll, approve, reject, returnBook, payFine
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf,
+    loadTransactions, loadFines, loadAll, approve, reject, requestReturn, approveReturn, rejectReturn, payFine
   }
 })

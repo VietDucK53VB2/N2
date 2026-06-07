@@ -85,8 +85,8 @@ function searchByCard(c) {
 }
 
 function fmtDate(d) { return d ? dayjs(d).format('DD/MM/YYYY') : '—' }
-function statusColor(s) { return s === 'Pending' ? 'orange' : s === 'Overdue' ? 'red' : s === 'Returned' ? 'green' : 'blue' }
-function statusLabel(s) { return s === 'Pending' ? 'Chờ duyệt' : s === 'Overdue' ? 'Quá hạn' : s === 'Returned' ? 'Đã trả' : 'Đang mượn' }
+function statusColor(s) { return s === 'Pending' ? 'orange' : s === 'ReturnPending' ? 'purple' : s === 'Overdue' ? 'red' : s === 'Returned' ? 'green' : 'blue' }
+function statusLabel(s) { return s === 'Pending' ? 'Chờ duyệt' : s === 'ReturnPending' ? 'Chờ trả' : s === 'Overdue' ? 'Quá hạn' : s === 'Returned' ? 'Đã trả' : 'Đang mượn' }
 </script>
 
 <style scoped>

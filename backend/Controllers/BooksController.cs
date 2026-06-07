@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
 namespace N2.Circulation.Api.Controllers;
@@ -59,4 +61,104 @@ public sealed class BooksController : ControllerBase
             return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
         }
     }
+
+    [HttpGet("search")]
+    public async Task<ActionResult> SearchAsync([FromQuery] string? q, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            var url = $"{CatalogServiceUrl}/api/books/search?q={Uri.EscapeDataString(q ?? string.Empty)}";
+            using var response = await client.GetAsync(url, cancellationToken);
+            return await ForwardCatalogResponseAsync(response, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
+        }
+    }
+
+    [HttpGet("products")]
+    public async Task<ActionResult> GetProductsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            using var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            return await ForwardCatalogResponseAsync(response, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
+        }
+    }
+
+    [HttpPost("{id:int}/borrow")]
+    public async Task<ActionResult> BorrowAsync(int id, [FromBody] QuantityRequest? request, CancellationToken cancellationToken)
+    {
+        return await ForwardBookQuantityMutationAsync(id, "borrow", request?.Quantity ?? 1, cancellationToken);
+    }
+
+    [HttpPost("{id:int}/return")]
+    public async Task<ActionResult> ReturnAsync(int id, [FromBody] QuantityRequest? request, CancellationToken cancellationToken)
+    {
+        return await ForwardBookQuantityMutationAsync(id, "return", request?.Quantity ?? 1, cancellationToken);
+    }
+
+    [HttpPost("{id:int}/rating")]
+    public async Task<ActionResult> RatingAsync(int id, [FromBody] RatingRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            using var content = CreateJsonContent(new { rating = request.Rating });
+            using var response = await client.PostAsync($"{CatalogServiceUrl}/api/books/{id}/rating", content, cancellationToken);
+            return await ForwardCatalogResponseAsync(response, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
+        }
+    }
+
+    private async Task<ActionResult> ForwardBookQuantityMutationAsync(int id, string action, int quantity, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            using var content = CreateJsonContent(new { quantity = Math.Max(1, quantity) });
+            using var response = await client.PostAsync($"{CatalogServiceUrl}/api/books/{id}/{action}", content, cancellationToken);
+            return await ForwardCatalogResponseAsync(response, cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
+        }
+    }
+
+    private static StringContent CreateJsonContent<T>(T payload)
+    {
+        return new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+    }
+
+    private static async Task<ActionResult> ForwardCatalogResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new StatusCodeResult((int)response.StatusCode);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/json";
+        return new ContentResult
+        {
+            Content = body,
+            ContentType = contentType,
+            StatusCode = (int)response.StatusCode
+        };
+    }
+
+    public sealed record QuantityRequest(int Quantity);
+
+    public sealed record RatingRequest(int Rating);
 }

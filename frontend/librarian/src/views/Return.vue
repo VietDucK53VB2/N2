@@ -1,129 +1,131 @@
 <template>
-  <a-card title="Xác nhận Trả sách">
-    <a-steps :current="step" class="mb-6">
-      <a-step title="Chọn phiếu" />
-      <a-step title="Xác nhận" />
-      <a-step title="Hoàn tất" />
-    </a-steps>
+  <a-card title="Xác nhận trả sách">
+    <div class="return-toolbar">
+      <a-input-search
+        v-model:value="keyword"
+        placeholder="Lọc theo mã thẻ, Book ID, tên sách..."
+        allow-clear
+        size="large"
+        style="max-width:420px"
+      />
+      <a-tag color="purple">{{ filteredLoans.length }} phiếu đang chờ trả</a-tag>
+    </div>
 
-    <div v-if="step === 0">
-      <div class="return-toolbar">
-        <a-input-search
-          v-model:value="keyword"
-          placeholder="Lọc theo mã thẻ, Book ID, tên sách..."
-          allow-clear
-          size="large"
-          style="max-width:420px"
-        />
-        <a-tag color="blue">{{ filteredLoans.length }} phiếu có thể trả</a-tag>
+    <a-table
+      :columns="columns"
+      :data-source="filteredLoans"
+      :loading="store.loading"
+      :pagination="{ pageSize: 8 }"
+      row-key="returnKey"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'reader'">
+          <a-space>
+            <a-avatar class="reader-avatar">{{ store.cardNumberOf(record).slice(0, 1) }}</a-avatar>
+            <span class="font-medium">{{ store.cardNumberOf(record) }}</span>
+          </a-space>
+        </template>
+
+        <template v-else-if="column.key === 'book'">
+          <div>
+            <div class="font-medium">{{ bookTitle(record) }}</div>
+            <div class="muted">Book ID: {{ store.bookIdOf(record) }}</div>
+          </div>
+        </template>
+
+        <template v-else-if="column.key === 'borrowedAt'">
+          {{ fmtDate(record.BorrowedAt || record.borrowedAt) }}
+        </template>
+
+        <template v-else-if="column.key === 'dueAt'">
+          <span :class="{ overdue: store.isOverdue(record) }">
+            {{ fmtDate(record.DueAt || record.dueAt) }}
+          </span>
+        </template>
+
+        <template v-else-if="column.key === 'status'">
+          <a-tag color="purple">Chờ kiểm tra tình trạng</a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'action'">
+          <a-space>
+            <a-button type="primary" size="small" @click="openConditionDialog(record)">
+              Đánh giá & xác nhận
+            </a-button>
+            <a-button size="small" :loading="actionId === record.Id + 'no'" @click="reject(record)">
+              Chưa nhận
+            </a-button>
+          </a-space>
+        </template>
+      </template>
+    </a-table>
+
+    <a-modal
+      v-model:open="conditionDialog"
+      title="Kiểm tra tình trạng sách"
+      ok-text="Xác nhận trả"
+      cancel-text="Hủy"
+      :confirm-loading="confirming"
+      @ok="approveWithCondition"
+    >
+      <div v-if="selectedLoan" class="condition-summary">
+        <div class="font-medium">{{ bookTitle(selectedLoan) }}</div>
+        <div class="muted">
+          {{ store.cardNumberOf(selectedLoan) }} · Book ID: {{ store.bookIdOf(selectedLoan) }}
+        </div>
       </div>
 
-      <a-table
-        :columns="columns"
-        :data-source="filteredLoans"
-        :loading="store.loading"
-        :pagination="{ pageSize: 8 }"
-        row-key="returnKey"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'reader'">
-            <a-space>
-              <a-avatar class="reader-avatar">{{ store.cardNumberOf(record).slice(0, 1) }}</a-avatar>
-              <span class="font-medium">{{ store.cardNumberOf(record) }}</span>
-            </a-space>
-          </template>
+      <a-form layout="vertical">
+        <a-form-item label="Tình trạng sách khi nhận lại" required>
+          <a-select v-model:value="conditionForm.condition">
+            <a-select-option value="Good">Tốt, dùng bình thường</a-select-option>
+            <a-select-option value="LightDamage">Hư nhẹ / bẩn nhẹ</a-select-option>
+            <a-select-option value="HeavyDamage">Hư nặng / rách nhiều</a-select-option>
+            <a-select-option value="Lost">Mất sách</a-select-option>
+          </a-select>
+        </a-form-item>
 
-          <template v-else-if="column.key === 'book'">
-            <div>
-              <div class="font-medium">{{ bookTitle(record) }}</div>
-              <div class="muted">Book ID: {{ store.bookIdOf(record) }}</div>
-            </div>
-          </template>
-
-          <template v-else-if="column.key === 'borrowedAt'">
-            {{ fmtDate(record.BorrowedAt || record.borrowedAt) }}
-          </template>
-
-          <template v-else-if="column.key === 'dueAt'">
-            <span :class="{ overdue: store.isOverdue(record) }">
-              {{ fmtDate(record.DueAt || record.dueAt) }}
-            </span>
-          </template>
-
-          <template v-else-if="column.key === 'status'">
-            <a-tag :color="store.isOverdue(record) ? 'red' : 'blue'">
-              {{ store.isOverdue(record) ? 'Quá hạn' : 'Đang mượn' }}
-            </a-tag>
-          </template>
-
-          <template v-else-if="column.key === 'action'">
-            <a-button type="primary" size="small" @click="selectLoan(record)">
-              Trả sách
-            </a-button>
-          </template>
-        </template>
-      </a-table>
-    </div>
-
-    <div v-if="step === 1">
-      <a-alert type="info" show-icon class="mb-4">
-        <template #message>Xác nhận thông tin trả sách</template>
-        <template #description>
-          <p><strong>Mã thẻ:</strong> {{ cardNum }}</p>
-          <p><strong>Sách:</strong> {{ selectedLoan ? bookTitle(selectedLoan) : '—' }}</p>
-          <p><strong>Book ID:</strong> {{ bookId }}</p>
-          <p><strong>Hạn trả:</strong> {{ fmtDate(selectedLoan?.DueAt || selectedLoan?.dueAt) }}</p>
-        </template>
-      </a-alert>
-      <a-space>
-        <a-button @click="step = 0"><LeftOutlined /> Quay lại</a-button>
-        <a-button type="primary" :loading="returning" @click="submitReturn">
-          <CheckOutlined /> Xác nhận trả sách
-        </a-button>
-      </a-space>
-    </div>
-
-    <div v-if="step === 2" class="text-center" style="padding:40px 0">
-      <a-result
-        :status="fineAmount > 0 ? 'warning' : 'success'"
-        :title="fineAmount > 0 ? 'Trả sách thành công - Có phí phạt' : 'Trả sách thành công!'"
-        :sub-title="fineAmount > 0 ? `Tiền phạt: ${fineAmount.toLocaleString()} VND` : 'Không có phí phạt.'"
-      >
-        <template #extra>
-          <a-button type="primary" @click="reset">Trả sách khác</a-button>
-        </template>
-      </a-result>
-    </div>
+        <a-form-item label="Ghi chú kiểm tra">
+          <a-textarea
+            v-model:value="conditionForm.conditionNote"
+            :rows="4"
+            placeholder="Ví dụ: Bìa hơi cong, trang 24 có vết bẩn..."
+            allow-clear
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </a-card>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useLibrarianStore } from '@/stores/librarian'
-import { LeftOutlined, CheckOutlined } from '@ant-design/icons-vue'
 
 const store = useLibrarianStore()
-const step = ref(0)
 const keyword = ref('')
-const cardNum = ref('')
-const bookId = ref('')
+const actionId = ref(null)
+const conditionDialog = ref(false)
+const confirming = ref(false)
 const selectedLoan = ref(null)
-const returning = ref(false)
-const fineAmount = ref(0)
+const conditionForm = reactive({
+  condition: 'Good',
+  conditionNote: ''
+})
 
 const columns = [
   { title: 'Độc giả', key: 'reader', width: 180 },
   { title: 'Sách', key: 'book' },
   { title: 'Ngày mượn', key: 'borrowedAt', width: 130 },
   { title: 'Hạn trả', key: 'dueAt', width: 130 },
-  { title: 'Trạng thái', key: 'status', width: 120 },
-  { title: '', key: 'action', width: 110 }
+  { title: 'Trạng thái', key: 'status', width: 180 },
+  { title: '', key: 'action', width: 260 }
 ]
 
 const returnableLoans = computed(() =>
-  store.activeTx.map((loan, index) => ({
+  store.returnPendingTx.map((loan, index) => ({
     ...loan,
     returnKey: loan.Id || loan.id || `${store.cardNumberOf(loan)}-${store.bookIdOf(loan)}-${index}`
   }))
@@ -143,41 +145,43 @@ const filteredLoans = computed(() => {
   })
 })
 
-function selectLoan(loan) {
-  selectedLoan.value = loan
-  cardNum.value = store.cardNumberOf(loan)
-  bookId.value = store.bookIdOf(loan)
-  fineAmount.value = 0
-  step.value = 1
+function openConditionDialog(record) {
+  selectedLoan.value = record
+  conditionForm.condition = 'Good'
+  conditionForm.conditionNote = ''
+  conditionDialog.value = true
 }
 
-async function submitReturn() {
-  returning.value = true
-  try {
-    const r = await store.returnBook(cardNum.value, bookId.value)
-    if (r.ok) {
-      const d = await r.json().catch(() => ({}))
-      fineAmount.value = d.FineAmount || d.fineAmount || 0
-      step.value = 2
-      message.success('Trả sách thành công!')
-    } else {
-      const e = await r.json().catch(() => ({}))
-      message.error(e.Message || e.message || 'Không trả được sách')
-    }
-  } catch {
-    message.error('Lỗi kết nối')
-  } finally {
-    returning.value = false
+async function approveWithCondition() {
+  if (!selectedLoan.value) return
+  confirming.value = true
+  actionId.value = selectedLoan.value.Id + 'ok'
+  const res = await store.approveReturn(selectedLoan.value.Id, {
+    condition: conditionForm.condition,
+    conditionNote: conditionForm.conditionNote
+  })
+  if (res.ok) {
+    message.success('Đã kiểm tra tình trạng và xác nhận trả sách.')
+    conditionDialog.value = false
+    selectedLoan.value = null
+  } else {
+    message.error(await readError(res))
   }
+  actionId.value = null
+  confirming.value = false
 }
 
-function reset() {
-  step.value = 0
-  cardNum.value = ''
-  bookId.value = ''
-  selectedLoan.value = null
-  fineAmount.value = 0
-  store.loadAll()
+async function reject(record) {
+  actionId.value = record.Id + 'no'
+  const res = await store.rejectReturn(record.Id)
+  if (res.ok) message.success('Đã chuyển lại trạng thái đang mượn.')
+  else message.error(await readError(res))
+  actionId.value = null
+}
+
+async function readError(res) {
+  const data = await res.json().catch(() => null)
+  return data?.Message || data?.message || 'Không xử lý được phiếu trả.'
 }
 
 function bookTitle(loan = {}) {
@@ -190,9 +194,6 @@ function fmtDate(d) {
 </script>
 
 <style scoped>
-.mb-6 { margin-bottom: 24px; }
-.mb-4 { margin-bottom: 16px; }
-.text-center { text-align: center; }
 .return-toolbar {
   display: flex;
   align-items: center;
@@ -213,5 +214,12 @@ function fmtDate(d) {
 .overdue {
   color: #ef4444;
   font-weight: 700;
+}
+.condition-summary {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 </style>

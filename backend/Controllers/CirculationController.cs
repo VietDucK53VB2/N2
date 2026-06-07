@@ -1,4 +1,5 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -37,6 +38,7 @@ public sealed class CirculationController : ControllerBase
 
         var borrowedAt = request.BorrowedAt ?? DateTime.UtcNow;
         var dueAt = request.DueAt ?? borrowedAt.AddDays(DefaultBorrowDays);
+        var quantity = Math.Clamp(request.Quantity, 1, 20);
 
         // Resolve actual BookId: prefer explicit BookId, otherwise look up by ISBN
         var resolvedBookId = request.BookId;
@@ -50,21 +52,21 @@ public sealed class CirculationController : ControllerBase
             resolvedBookId = bookId.Value.ToString();
         }
 
-        // Gọi API N1 để cập nhật số lượng sách
-        await UpdateCatalogBookBorrowAsync(resolvedBookId, 1, cancellationToken);
-
-        var transaction = new BorrowTransaction
-        {
-            Id = Guid.NewGuid(),
-            BookId = resolvedBookId,
-            Isbn = request.Isbn,
-            UserId = request.UserId,
-            CardNumber = request.CardNumber,
-            BorrowedAt = borrowedAt,
-            DueAt = dueAt,
-            FineAmount = 0m,
-            Status = "Approved" // Auto-approve for now
-        };
+        var transactions = Enumerable.Range(0, quantity)
+            .Select(_ => new BorrowTransaction
+            {
+                Id = Guid.NewGuid(),
+                BookId = resolvedBookId,
+                Isbn = request.Isbn,
+                UserId = request.UserId,
+                CardNumber = request.CardNumber,
+                BorrowedAt = borrowedAt,
+                DueAt = dueAt,
+                FineAmount = 0m,
+                Status = "Pending"
+            })
+            .ToList();
+        var transaction = transactions[0];
 
         var borrowedEvent = new BookBorrowedEvent
         {
@@ -86,8 +88,8 @@ public sealed class CirculationController : ControllerBase
 
         try
         {
-            _dbContext.BorrowTransactions.Add(transaction);
-            _dbContext.PublishedEventLogs.Add(CreateEventLog("book.borrowed", borrowedEvent));
+            _dbContext.BorrowTransactions.AddRange(transactions);
+            _dbContext.PublishedEventLogs.Add(CreateEventLog("borrow.requested", borrowedEvent));
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException ex)
@@ -105,6 +107,25 @@ public sealed class CirculationController : ControllerBase
             BorrowedAt = transaction.BorrowedAt,
             DueAt = transaction.DueAt
         });
+    }
+
+    [HttpPost("transactions/{id:guid}/return")]
+    public async Task<ActionResult<ReturnResponse>> ReturnByTransactionAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status == "Returned")
+        {
+            return BadRequest(new { Message = "Borrow transaction was already returned." });
+        }
+
+        return await RequestReturnAsync(transaction, cancellationToken);
     }
 
     [HttpPost("return")]
@@ -129,15 +150,121 @@ public sealed class CirculationController : ControllerBase
             return NotFound(new { Message = "Borrow transaction not found for the given book and reader reference." });
         }
 
-        var returnedAt = request.ReturnedAt ?? DateTime.UtcNow;
+        return await RequestReturnAsync(transaction, cancellationToken);
+    }
+
+    [HttpPost("transactions/{id:guid}/return/approve")]
+    [HttpPost("transactions/{id:guid}/confirm-return")]
+    public async Task<ActionResult<ReturnResponse>> ApproveReturnAsync(
+        Guid id,
+        [FromBody] ReturnApprovalRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (transaction.Status != "ReturnPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for return approval." });
+        }
+
+        var condition = string.IsNullOrWhiteSpace(request?.Condition) ? "Good" : request.Condition.Trim();
+        var conditionNote = string.IsNullOrWhiteSpace(request?.ConditionNote) ? null : request.ConditionNote.Trim();
+
+        return await ReturnTransactionAsync(transaction, DateTime.UtcNow, cancellationToken, condition, conditionNote);
+    }
+
+    [HttpPost("transactions/{id:guid}/return/reject")]
+    public async Task<ActionResult> RejectReturnAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (transaction.Status != "ReturnPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for return approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("return.rejected", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            RejectedAt = DateTimeOffset.UtcNow
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Return request rejected.", TransactionId = transaction.Id });
+    }
+
+    private async Task<ActionResult<ReturnResponse>> RequestReturnAsync(
+        BorrowTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (transaction.Status == "Pending")
+        {
+            return BadRequest(new { Message = "Borrow request is still waiting for approval." });
+        }
+
+        if (transaction.Status == "ReturnPending")
+        {
+            return Accepted(new
+            {
+                Message = "Return request is already waiting for librarian approval.",
+                TransactionId = transaction.Id,
+                Status = transaction.Status
+            });
+        }
+
+        transaction.Status = "ReturnPending";
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("return.requested", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            RequestedAt = DateTimeOffset.UtcNow
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Accepted(new
+        {
+            Message = "Return request is waiting for librarian approval.",
+            TransactionId = transaction.Id,
+            Status = transaction.Status
+        });
+    }
+
+    private async Task<ActionResult<ReturnResponse>> ReturnTransactionAsync(
+        BorrowTransaction transaction,
+        DateTime returnedAt,
+        CancellationToken cancellationToken,
+        string condition = "Good",
+        string? conditionNote = null)
+    {
         var overdueDays = Math.Max(0, (int)Math.Ceiling((returnedAt - transaction.DueAt).TotalDays));
         var fineAmount = overdueDays * DailyFineRate;
 
-        // Gọi API N1 để cập nhật số lượng sách
-        await UpdateCatalogBookReturnAsync(request.BookId, 1, cancellationToken);
+        // Gá»i API N1 Ä‘á»ƒ cáº­p nháº­t sá»‘ lÆ°á»£ng sÃ¡ch
+        var catalogReturnResult = await UpdateCatalogBookReturnAsync(transaction.BookId, 1, cancellationToken);
+        if (!catalogReturnResult.IsSuccess)
+        {
+            return StatusCode(catalogReturnResult.StatusCode, new { Message = catalogReturnResult.Message });
+        }
 
         transaction.ReturnedAt = returnedAt;
         transaction.FineAmount = fineAmount;
+        transaction.Status = "Returned";
 
         if (fineAmount > 0)
         {
@@ -174,6 +301,15 @@ public sealed class CirculationController : ControllerBase
         }));
 
         _dbContext.PublishedEventLogs.Add(CreateEventLog("book.returned", returnedEvent));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("return.condition.checked", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Condition = condition,
+            ConditionNote = conditionNote,
+            CheckedAt = DateTimeOffset.UtcNow
+        }));
         try
         {
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -214,7 +350,7 @@ public sealed class CirculationController : ControllerBase
         if (!string.IsNullOrWhiteSpace(cardNumber))
             query = query.Where(t => t.CardNumber == cardNumber);
         if (activeOnly == true)
-            query = query.Where(t => t.ReturnedAt == null);
+            query = query.Where(t => t.ReturnedAt == null && t.Status != "Pending");
 
         var limit = Math.Clamp(pageSize ?? 100, 1, 200);
         var result = await query
@@ -231,7 +367,8 @@ public sealed class CirculationController : ControllerBase
                 ReturnedAt = t.ReturnedAt,
                 FineAmount = t.FineAmount,
                 Status = t.Status == "Pending" ? "Pending" :
-                         t.ReturnedAt != null ? "Returned" :
+                         t.Status == "ReturnPending" ? "ReturnPending" :
+                         t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
                          t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
             })
             .ToListAsync(cancellationToken);
@@ -284,7 +421,7 @@ public sealed class CirculationController : ControllerBase
         var stats = groupedStats
             .Select(item => new MonthlyCirculationStatsDto
             {
-                Month = $"Tháng {item.Month:00}/{item.Year}",
+                Month = $"ThÃ¡ng {item.Month:00}/{item.Year}",
                 BorrowCount = item.BorrowCount,
                 ReturnCount = item.ReturnCount
             })
@@ -325,6 +462,114 @@ public sealed class CirculationController : ControllerBase
         }).ToList();
 
         return Ok(result);
+    }
+
+    [HttpGet("dashboard-stats")]
+    [HttpGet("/api/reports/dashboard")]
+    public async Task<ActionResult> GetDashboardStatsAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1).AddMonths(-5);
+        var monthKeys = Enumerable.Range(0, 6)
+            .Select(offset => monthStart.AddMonths(offset))
+            .ToList();
+
+        var totalBorrows = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .CountAsync(cancellationToken);
+
+        var totalReturns = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .CountAsync(item => item.ReturnedAt != null, cancellationToken);
+
+        var activeBorrows = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .CountAsync(item => item.ReturnedAt == null && item.Status != "Pending", cancellationToken);
+
+        var overdueBorrows = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .CountAsync(item => item.ReturnedAt == null && item.Status != "Pending" && item.DueAt < now, cancellationToken);
+
+        var totalFines = await _dbContext.FineCharges
+            .AsNoTracking()
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var unpaidFines = await _dbContext.FineCharges
+            .AsNoTracking()
+            .Where(item => item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var topBooksRaw = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .GroupBy(item => item.BookId)
+            .Select(group => new { BookId = group.Key, BorrowCount = group.Count() })
+            .OrderByDescending(item => item.BorrowCount)
+            .ThenBy(item => item.BookId)
+            .Take(5)
+            .ToListAsync(cancellationToken);
+
+        var booksById = await GetBooksFromCatalogAsync(topBooksRaw.Select(item => item.BookId).ToList(), cancellationToken);
+        var maxBorrowCount = topBooksRaw.Count > 0 ? topBooksRaw.Max(item => item.BorrowCount) : 0;
+
+        var topBorrowedBooks = topBooksRaw.Select(item =>
+        {
+            booksById.TryGetValue(item.BookId, out var book);
+            return new
+            {
+                bookId = item.BookId,
+                bookName = string.IsNullOrWhiteSpace(book?.TenSach) ? item.BookId : book.TenSach,
+                borrowCount = item.BorrowCount,
+                percentage = maxBorrowCount == 0 ? 0 : (int)Math.Round(item.BorrowCount * 100m / maxBorrowCount)
+            };
+        }).ToList();
+
+        var borrowTrendRaw = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .Where(item => item.BorrowedAt >= monthStart)
+            .GroupBy(item => new { item.BorrowedAt.Year, item.BorrowedAt.Month })
+            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        var returnTrendRaw = await _dbContext.BorrowTransactions
+            .AsNoTracking()
+            .Where(item => item.ReturnedAt != null && item.ReturnedAt >= monthStart)
+            .GroupBy(item => new { item.ReturnedAt!.Value.Year, item.ReturnedAt.Value.Month })
+            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        var borrowTrendLookup = borrowTrendRaw.ToDictionary(item => (item.Year, item.Month), item => item.Count);
+        var returnTrendLookup = returnTrendRaw.ToDictionary(item => (item.Year, item.Month), item => item.Count);
+
+        var borrowingTrends = monthKeys.Select(month =>
+        {
+            var key = (month.Year, month.Month);
+            return new
+            {
+                month = month.ToString("MMM", CultureInfo.InvariantCulture),
+                borrows = borrowTrendLookup.TryGetValue(key, out var borrowCount) ? borrowCount : 0,
+                returns = returnTrendLookup.TryGetValue(key, out var returnCount) ? returnCount : 0
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            totalBorrows,
+            totalReturns,
+            activeBorrows,
+            overdueBorrows,
+            totalFines,
+            unpaidFines,
+            topBorrowedBooks,
+            borrowingTrends,
+            links = new
+            {
+                transactions = "/api/circulation/transactions",
+                fines = "/api/circulation/fines",
+                statistics = "/api/circulation/statistics",
+                monthlyStats = "/api/circulation/stats/monthly",
+                popularBooks = "/api/circulation/stats/popular"
+            }
+        });
     }
 
     private const string DefaultCatalogServiceUrl = "http://localhost:5185";
@@ -407,9 +652,9 @@ public sealed class CirculationController : ControllerBase
         var todayBorrowCount = await _dbContext.BorrowTransactions
             .CountAsync(b => b.BorrowedAt >= today, cancellationToken);
         var totalBorrowed = await _dbContext.BorrowTransactions
-            .CountAsync(b => b.ReturnedAt == null, cancellationToken);
+            .CountAsync(b => b.ReturnedAt == null && b.Status != "Pending", cancellationToken);
         var totalOverdue = await _dbContext.BorrowTransactions
-            .CountAsync(b => b.ReturnedAt == null && b.DueAt < now, cancellationToken);
+            .CountAsync(b => b.ReturnedAt == null && b.Status != "Pending" && b.DueAt < now, cancellationToken);
         var totalFines = await _dbContext.FineCharges.SumAsync(f => f.Amount, cancellationToken);
         var totalUsers = await _dbContext.Users.CountAsync(cancellationToken);
 
@@ -449,6 +694,107 @@ public sealed class CirculationController : ControllerBase
         return Ok(new { Message = "Fine marked as paid.", FineId = id });
     }
 
+    [HttpPost("books/{bookId}/reviews")]
+    public async Task<ActionResult> ReviewBookAsync(
+        string bookId,
+        [FromBody] BookReviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Rating < 0 || request.Rating > 5)
+        {
+            return BadRequest(new { Message = "Rating must be between 0 and 5." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.UserId) && string.IsNullOrWhiteSpace(request.CardNumber))
+        {
+            return BadRequest(new { Message = "Either UserId or CardNumber must be provided." });
+        }
+
+        var requestedBookId = bookId.Trim();
+        var requestedUserId = request.UserId?.Trim();
+        var requestedCardNumber = request.CardNumber?.Trim();
+        var existingReviewPayloads = await _dbContext.PublishedEventLogs
+            .AsNoTracking()
+            .Where(item => item.EventType == "book.reviewed")
+            .Select(item => item.PayloadJson)
+            .ToListAsync(cancellationToken);
+
+        var alreadyReviewed = existingReviewPayloads
+            .Select(TryReadReview)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .Any(item =>
+                string.Equals(item.BookId, requestedBookId, StringComparison.OrdinalIgnoreCase) &&
+                (
+                    (!string.IsNullOrWhiteSpace(requestedCardNumber) &&
+                     string.Equals(item.CardNumber, requestedCardNumber, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrWhiteSpace(requestedUserId) &&
+                     string.Equals(item.UserId, requestedUserId, StringComparison.OrdinalIgnoreCase))
+                ));
+
+        if (alreadyReviewed)
+        {
+            return Conflict(new { Message = "This reader has already reviewed this book." });
+        }
+
+        var review = new
+        {
+            ReviewId = Guid.NewGuid(),
+            BookId = requestedBookId,
+            UserId = requestedUserId,
+            CardNumber = requestedCardNumber,
+            Rating = request.Rating,
+            Comment = request.Comment?.Trim() ?? string.Empty,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("book.reviewed", review));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(review);
+    }
+
+    [HttpGet("books/reviews")]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetBookReviewsAsync(
+        [FromQuery] string? bookId,
+        CancellationToken cancellationToken)
+    {
+        var logs = await _dbContext.PublishedEventLogs
+            .AsNoTracking()
+            .Where(item => item.EventType == "book.reviewed")
+            .OrderByDescending(item => item.PublishedAt)
+            .Select(item => item.PayloadJson)
+            .ToListAsync(cancellationToken);
+
+        var reviews = logs
+            .Select(TryReadReview)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .Where(item => string.IsNullOrWhiteSpace(bookId) || item.BookId == bookId)
+            .ToList();
+
+        var grouped = reviews
+            .GroupBy(item => item.BookId)
+            .Select(group => new
+            {
+                bookId = group.Key,
+                averageRating = group.Any() ? Math.Round(group.Average(item => item.Rating), 1) : 0,
+                reviewCount = group.Count(),
+                reviews = group.Select(item => new
+                {
+                    item.ReviewId,
+                    item.UserId,
+                    item.CardNumber,
+                    item.Rating,
+                    item.Comment,
+                    item.CreatedAt
+                }).ToList()
+            })
+            .ToList<object>();
+
+        return Ok(grouped);
+    }
+
     [HttpPost("transactions/{id}/approve")]
     public async Task<ActionResult> ApproveTransactionAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -456,8 +802,23 @@ public sealed class CirculationController : ControllerBase
         if (transaction is null)
             return NotFound(new { Message = "Transaction not found." });
 
-        transaction.Status = "Approved";
+        if (transaction.Status != "Pending")
+            return BadRequest(new { Message = "Only pending borrow requests can be approved." });
+
+        var catalogBorrowResult = await UpdateCatalogBookBorrowAsync(transaction.BookId, 1, cancellationToken);
+        if (!catalogBorrowResult.IsSuccess)
+            return StatusCode(catalogBorrowResult.StatusCode, new { Message = catalogBorrowResult.Message });
+
+        transaction.Status = "Borrowed";
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.approved", new { TransactionId = id, ApprovedAt = DateTimeOffset.UtcNow }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("book.borrowed", new BookBorrowedEvent
+        {
+            BookId = transaction.BookId,
+            Isbn = transaction.Isbn,
+            UserId = transaction.UserId,
+            CardNumber = transaction.CardNumber,
+            Timestamp = DateTimeOffset.UtcNow
+        }));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new { Message = "Transaction approved.", TransactionId = id });
@@ -470,7 +831,9 @@ public sealed class CirculationController : ControllerBase
         if (transaction is null)
             return NotFound(new { Message = "Transaction not found." });
 
-        // Remove the transaction
+        if (transaction.Status != "Pending")
+            return BadRequest(new { Message = "Only pending borrow requests can be rejected." });
+
         _dbContext.BorrowTransactions.Remove(transaction);
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.rejected", new { TransactionId = id, RejectedAt = DateTimeOffset.UtcNow }));
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -484,7 +847,7 @@ public sealed class CirculationController : ControllerBase
         var now = DateTime.UtcNow;
         var overdue = await _dbContext.BorrowTransactions
             .AsNoTracking()
-            .Where(b => b.ReturnedAt == null && b.DueAt < now)
+            .Where(b => b.ReturnedAt == null && b.Status != "Pending" && b.DueAt < now)
             .OrderBy(b => b.DueAt)
             .Select(b => new { b.Id, b.BookId, b.Isbn, b.UserId, b.CardNumber, b.BorrowedAt, b.DueAt })
             .ToListAsync(cancellationToken);
@@ -522,35 +885,92 @@ public sealed class CirculationController : ControllerBase
     private async Task<int> GetActiveBorrowsCountAsync(string bookId, CancellationToken cancellationToken)
     {
         return await _dbContext.BorrowTransactions
-            .CountAsync(item => item.BookId == bookId && item.ReturnedAt == null, cancellationToken);
+            .CountAsync(item =>
+                item.BookId == bookId &&
+                item.ReturnedAt == null &&
+                item.Status != "Pending",
+                cancellationToken);
     }
 
-    private async Task UpdateCatalogBookBorrowAsync(string bookId, int quantity, CancellationToken cancellationToken)
+    private async Task<CatalogUpdateResult> UpdateCatalogBookBorrowAsync(string bookId, int quantity, CancellationToken cancellationToken)
     {
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var content = new StringContent($"{{\"quantity\":{quantity}}}", Encoding.UTF8, "application/json");
-            await client.PostAsync($"{CatalogServiceUrl}/api/books/{bookId}/borrow", content, cancellationToken);
+            using var content = CreateQuantityContent(quantity);
+            using var response = await client.PostAsync($"{CatalogServiceUrl}/api/books/{bookId}/borrow", content, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return CatalogUpdateResult.Ok();
+            }
+
+            var message = await ReadCatalogErrorAsync(response, cancellationToken);
+            return CatalogUpdateResult.Fail((int)response.StatusCode, $"Catalog service rejected borrow for book {bookId}. {message}");
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            // Log error but don't fail the transaction
+            return CatalogUpdateResult.Fail(503, $"Cannot connect to Catalog Service when borrowing book {bookId}. {ex.Message}");
         }
     }
 
-    private async Task UpdateCatalogBookReturnAsync(string bookId, int quantity, CancellationToken cancellationToken)
+    private async Task<CatalogUpdateResult> UpdateCatalogBookReturnAsync(string bookId, int quantity, CancellationToken cancellationToken)
     {
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var content = new StringContent($"{{\"quantity\":{quantity}}}", Encoding.UTF8, "application/json");
-            await client.PostAsync($"{CatalogServiceUrl}/api/books/{bookId}/return", content, cancellationToken);
+            using var content = CreateQuantityContent(quantity);
+            using var response = await client.PostAsync($"{CatalogServiceUrl}/api/books/{bookId}/return", content, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return CatalogUpdateResult.Ok();
+            }
+
+            var message = await ReadCatalogErrorAsync(response, cancellationToken);
+            return CatalogUpdateResult.Fail((int)response.StatusCode, $"Catalog service rejected return for book {bookId}. {message}");
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            // Log error but don't fail the transaction
+            return CatalogUpdateResult.Fail(503, $"Cannot connect to Catalog Service when returning book {bookId}. {ex.Message}");
         }
+    }
+
+    private static StringContent CreateQuantityContent(int quantity)
+    {
+        return new StringContent(JsonSerializer.Serialize(new { quantity }), Encoding.UTF8, "application/json");
+    }
+
+    private static async Task<string> ReadCatalogErrorAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return $"Status code: {(int)response.StatusCode}.";
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("message", out var message))
+            {
+                return message.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("Message", out var capitalMessage))
+            {
+                return capitalMessage.GetString() ?? body;
+            }
+
+            if (json.RootElement.TryGetProperty("title", out var title))
+            {
+                return title.GetString() ?? body;
+            }
+        }
+        catch (JsonException)
+        {
+            return body;
+        }
+
+        return body;
     }
 
     private async Task<int?> GetBookIdByIsbnAsync(string isbn, CancellationToken cancellationToken)
@@ -615,4 +1035,67 @@ public sealed class CirculationController : ControllerBase
         public string ImageUrl { get; set; } = "";
         public string Isbn { get; set; } = "";
     }
+
+    private static ReviewDto? TryReadReview(string payloadJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+            var bookId = root.TryGetProperty("BookId", out var bookIdElement)
+                ? bookIdElement.GetString()
+                : root.TryGetProperty("bookId", out var camelBookIdElement)
+                    ? camelBookIdElement.GetString()
+                    : null;
+
+            if (string.IsNullOrWhiteSpace(bookId))
+            {
+                return null;
+            }
+
+            var rating = root.TryGetProperty("Rating", out var ratingElement)
+                ? ratingElement.GetInt32()
+                : root.TryGetProperty("rating", out var camelRatingElement)
+                    ? camelRatingElement.GetInt32()
+                    : 0;
+
+            return new ReviewDto
+            {
+                ReviewId = root.TryGetProperty("ReviewId", out var reviewIdElement) && reviewIdElement.TryGetGuid(out var reviewId)
+                    ? reviewId
+                    : Guid.Empty,
+                BookId = bookId,
+                UserId = root.TryGetProperty("UserId", out var userIdElement) ? userIdElement.GetString() : null,
+                CardNumber = root.TryGetProperty("CardNumber", out var cardElement) ? cardElement.GetString() : null,
+                Rating = Math.Clamp(rating, 0, 5),
+                Comment = root.TryGetProperty("Comment", out var commentElement) ? commentElement.GetString() ?? string.Empty : string.Empty,
+                CreatedAt = root.TryGetProperty("CreatedAt", out var createdAtElement) && createdAtElement.TryGetDateTimeOffset(out var createdAt)
+                    ? createdAt
+                    : DateTimeOffset.MinValue
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed class ReviewDto
+    {
+        public Guid ReviewId { get; init; }
+        public string BookId { get; init; } = string.Empty;
+        public string? UserId { get; init; }
+        public string? CardNumber { get; init; }
+        public int Rating { get; init; }
+        public string Comment { get; init; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; init; }
+    }
+
+    private sealed record CatalogUpdateResult(bool IsSuccess, int StatusCode, string Message)
+    {
+        public static CatalogUpdateResult Ok() => new(true, 200, string.Empty);
+
+        public static CatalogUpdateResult Fail(int statusCode, string message) => new(false, statusCode, message);
+    }
 }
+

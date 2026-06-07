@@ -156,7 +156,7 @@
 
     <!-- Modals -->
     <BookDetailDialog v-model="detailDialog" :book="selectedBook" :borrow-count="selectedBorrowCount" @borrowed="handleBorrowed" />
-    <BorrowDialog v-model="borrowDialog" @success="store.loadAll()" />
+    <BorrowDialog v-model="borrowDialog" @success="handleQuickBorrowSuccess" />
     <v-snackbar v-model="successSnackbar" color="success" timeout="3500" location="bottom right">
       {{ successMessage }}
     </v-snackbar>
@@ -242,12 +242,29 @@ function handleBorrowed(payload = {}) {
   const quantity = payload.quantity || 1
   const title = payload.title || 'sách'
   const total = payload.totalPrice ? ` - ${formatMoney(payload.totalPrice)}` : ''
-  successMessage.value = `Đã mượn thành công ${quantity} cuốn "${title}"${total}`
+  successMessage.value = `Đã gửi yêu cầu mượn ${quantity} cuốn "${title}"${total}. Vui lòng chờ thủ thư duyệt.`
   successSnackbar.value = true
 }
-function getTransactionStatusText(tx) { if (store.isOverdue(tx)) return 'Qu\u00e1 h\u1ea1n'; return getStatusText(tx) }
-function getStatusColor(tx) { if (store.isOverdue(tx)) return 'error'; const d = daysLeft(tx.DueAt); return d !== null && d <= 3 ? 'warning' : 'info' }
-function getStatusText(tx) { if (tx.Status === 'Overdue') return 'Quá hạn'; const d = daysLeft(tx.DueAt); return d !== null ? `Còn ${d} ngày` : 'Đang mượn' }
+async function handleQuickBorrowSuccess() {
+  await store.loadAll()
+  successMessage.value = 'Đã gửi yêu cầu mượn sách. Vui lòng chờ thủ thư duyệt.'
+  successSnackbar.value = true
+}
+function getTransactionStatusText(tx) { return getStatusText(tx) }
+function getStatusColor(tx) {
+  if (store.isPending(tx)) return 'warning'
+  if (store.isReturnPending(tx)) return 'deep-purple'
+  if (store.isOverdue(tx)) return 'error'
+  const d = daysLeft(tx.DueAt)
+  return d !== null && d <= 3 ? 'warning' : 'info'
+}
+function getStatusText(tx) {
+  if (store.isPending(tx)) return 'Chờ duyệt'
+  if (store.isReturnPending(tx)) return 'Chờ trả'
+  if (tx.Status === 'Overdue' || store.isOverdue(tx)) return 'Quá hạn'
+  const d = daysLeft(tx.DueAt)
+  return d !== null ? `Còn ${d} ngày` : 'Đang mượn'
+}
 </script>
 
 <style scoped lang="scss">

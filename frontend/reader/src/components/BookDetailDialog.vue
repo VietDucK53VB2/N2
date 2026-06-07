@@ -125,13 +125,11 @@ async function handleBorrow() {
 
   borrowing.value = true
   try {
-    for (let i = 0; i < quantity.value; i++) {
-      const response = await borrowBook(card, bookId)
-      if (!response.ok) {
-        const data = await response.json().catch(() => null)
-        errorMessage.value = data?.message || data?.Message || 'Không mượn được sách. Vui lòng thử lại.'
-        return
-      }
+    const response = await borrowBook(card, bookId, quantity.value)
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      errorMessage.value = data?.message || data?.Message || 'Không mượn được sách. Vui lòng thử lại.'
+      return
     }
     await store.loadAll()
     emit('borrowed', {
