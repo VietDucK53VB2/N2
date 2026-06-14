@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartLib - Chọn vai trò</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'lib-bg': '#f1efeb',
+            'lib-warm': '#fbf9f6',
+            'lib-text': '#5a4d44',
+            'lib-accent': '#8b7a6d'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: 'Inter', sans-serif; background: #f1efeb; }
+    .card-role { transition: all 0.25s ease; cursor: pointer; }
+    .card-role:hover { transform: translateY(-6px); box-shadow: 0 12px 40px rgba(0,0,0,0.12); }
+    .logo-icon { background: linear-gradient(135deg, #065f46, #10b981); }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+  <div class="w-full max-w-3xl">
+    <!-- Header -->
+    <div class="text-center mb-12">
+      <div class="inline-flex items-center justify-center w-20 h-20 rounded-3xl logo-icon text-white text-4xl font-extrabold mb-6 shadow-lg">S</div>
+      <h1 class="text-4xl font-extrabold text-lib-text mb-2">SmartLib</h1>
+      <p class="text-lib-accent text-lg">Hệ thống Quản lý Lưu hành Thư viện</p>
+      <p class="text-gray-400 text-sm mt-2">Chọn vai trò để tiếp tục</p>
+    </div>
+
+    <!-- Role Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Admin -->
+      <a href="/ui/admin/" class="card-role block bg-white rounded-3xl p-8 text-center border border-white shadow-md">
+        <div class="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">🛡️</span>
+        </div>
+        <h2 class="text-xl font-bold text-lib-text mb-1">Quản trị viên</h2>
+        <p class="text-sm text-gray-400">Quản lý người dùng, báo cáo & cấu hình hệ thống</p>
+        <div class="mt-4 text-xs font-semibold text-red-500 bg-red-50 rounded-xl py-2 px-4 inline-block">Admin Panel</div>
+      </a>
+
+      <!-- Librarian -->
+      <a href="/ui/librarian/" class="card-role block bg-white rounded-3xl p-8 text-center border border-white shadow-md">
+        <div class="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">📚</span>
+        </div>
+        <h2 class="text-xl font-bold text-lib-text mb-1">Thủ thư</h2>
+        <p class="text-sm text-gray-400">Xử lý mượn/trả sách, theo dõi quá hạn & phí phạt</p>
+        <div class="mt-4 text-xs font-semibold text-emerald-600 bg-emerald-50 rounded-xl py-2 px-4 inline-block">Librarian Panel</div>
+      </a>
+
+      <!-- Reader -->
+      <a href="/ui/reader/" class="card-role block bg-white rounded-3xl p-8 text-center border border-white shadow-md">
+        <div class="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
+          <span class="text-3xl">👤</span>
+        </div>
+        <h2 class="text-xl font-bold text-lib-text mb-1">Độc giả</h2>
+        <p class="text-sm text-gray-400">Tự phục vụ mượn sách, xem lịch sử & thông tin cá nhân</p>
+        <div class="mt-4 text-xs font-semibold text-blue-600 bg-blue-50 rounded-xl py-2 px-4 inline-block">Reader Panel</div>
+      </a>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-12 text-xs text-gray-300">
+      SmartLib N2 · Hệ thống Lưu hành Thư viện
+    </div>
+  </div>
+</body>
+</html>

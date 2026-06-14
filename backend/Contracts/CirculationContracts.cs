@@ -10,11 +10,20 @@ public sealed record BorrowRequest
 
     public string? CardNumber { get; init; }
 
+    public string? ReaderName { get; init; }
+
+    public string? ReaderUsername { get; init; }
+
     public DateTime? BorrowedAt { get; init; }
 
     public DateTime? DueAt { get; init; }
 
     public int Quantity { get; init; } = 1;
+}
+
+public sealed record BorrowPolicyRequest
+{
+    public int MonthlyBorrowLimit { get; init; } = 5;
 }
 
 public sealed record ReturnRequest
@@ -39,13 +48,21 @@ public sealed record ReturnApprovalRequest
 
 public sealed record BookReviewRequest
 {
+    public Guid? TransactionId { get; init; }
+
     public string? UserId { get; init; }
 
     public string? CardNumber { get; init; }
 
+    public string? Username { get; init; }
+
+    public string? FullName { get; init; }
+
     public int Rating { get; init; }
 
     public string? Comment { get; init; }
+
+    public DateTimeOffset? CreatedAt { get; init; }
 }
 
 public sealed record BorrowResponse
@@ -60,9 +77,19 @@ public sealed record BorrowResponse
 
     public string? CardNumber { get; init; }
 
+    public string? ReaderName { get; init; }
+
+    public string? ReaderUsername { get; init; }
+
     public DateTime BorrowedAt { get; init; }
 
     public DateTime DueAt { get; init; }
+
+    public DateTime CreatedAt { get; init; }
+
+    public DateTime UpdatedAt { get; init; }
+
+    public DateTime RequestDate { get; init; }
 }
 
 public sealed record ReturnResponse
@@ -81,7 +108,17 @@ public sealed record ReturnResponse
 
     public DateTime ReturnedAt { get; init; }
 
+    public DateTime CreatedAt { get; init; }
+
+    public DateTime UpdatedAt { get; init; }
+
+    public DateTime RequestDate { get; init; }
+
     public decimal FineAmount { get; init; }
+
+    public string Condition { get; init; } = "Good";
+
+    public bool ReturnedToCatalog { get; init; } = true;
 }
 
 public sealed record MonthlyCirculationStatsDto
@@ -115,6 +152,10 @@ public sealed record BookBorrowedEvent
     public string? UserId { get; init; }
 
     public string? CardNumber { get; init; }
+
+    public string? ReaderName { get; init; }
+
+    public string? ReaderUsername { get; init; }
 
     public DateTimeOffset Timestamp { get; init; }
 }

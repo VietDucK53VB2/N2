@@ -12,7 +12,7 @@ import { initAuth } from '@/utils/api'
 const store = useAppStore()
 
 onMounted(async () => {
-  initAuth()
+  await initAuth()
   await store.loadUserInfo()
   store.loadAll()
 })

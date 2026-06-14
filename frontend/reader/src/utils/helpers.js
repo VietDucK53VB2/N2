@@ -1,10 +1,69 @@
 import dayjs from 'dayjs'
 import 'dayjs/locale/vi'
+
 dayjs.locale('vi')
 
+const timezonePattern = /(?:Z|[+-]\d{2}:?\d{2})$/i
+
+export function parseApiDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'number') return new Date(value)
+  if (typeof value !== 'string') return new Date(value)
+
+  const text = value.trim()
+  if (!text) return null
+
+  // Backend returns UTC timestamps without a timezone suffix in a few places.
+  // Treat those as UTC so a fresh loan does not show +7 hours in Vietnam.
+  return new Date(timezonePattern.test(text) ? text : `${text}Z`)
+}
+
+export function apiDateMs(value) {
+  const date = parseApiDate(value)
+  const ms = date?.getTime()
+  return Number.isFinite(ms) ? ms : NaN
+}
+
 export function formatDate(d) {
-  if (!d) return '—'
-  return dayjs(d).format('DD/MM/YYYY')
+  const date = parseApiDate(d)
+  if (!date || Number.isNaN(date.getTime())) return '—'
+  return dayjs(date).format('DD/MM/YYYY')
+}
+
+export function formatDateTime(d) {
+  const date = parseApiDate(d)
+  if (!date || Number.isNaN(date.getTime())) return '—'
+  return dayjs(date).format('DD/MM/YYYY HH:mm:ss')
+}
+
+export function formatDurationMs(ms) {
+  if (ms === null || ms === undefined || Number.isNaN(ms)) return '—'
+  const overdue = ms < 0
+  let totalSeconds = Math.abs(Math.floor(ms / 1000))
+  const days = Math.floor(totalSeconds / 86400)
+  totalSeconds %= 86400
+  const hours = Math.floor(totalSeconds / 3600)
+  totalSeconds %= 3600
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const clock = [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':')
+  const text = days > 0 ? `${days} ngày ${clock}` : clock
+  return overdue ? `Quá hạn ${text}` : text
+}
+
+export function durationSince(start, end = Date.now()) {
+  const startMs = apiDateMs(start)
+  const endMs = apiDateMs(end)
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return '—'
+  return formatDurationMs(endMs - startMs)
+}
+
+export function timeUntil(target, now = Date.now()) {
+  const targetMs = apiDateMs(target)
+  const nowMs = apiDateMs(now)
+  if (!Number.isFinite(targetMs) || !Number.isFinite(nowMs)) return '—'
+  return formatDurationMs(targetMs - nowMs)
 }
 
 export function formatMoney(v) {
@@ -13,7 +72,9 @@ export function formatMoney(v) {
 
 export function daysLeft(dueDate) {
   if (!dueDate) return null
-  return Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24))
+  const dueMs = apiDateMs(dueDate)
+  if (!Number.isFinite(dueMs)) return null
+  return Math.ceil((dueMs - Date.now()) / (1000 * 60 * 60 * 24))
 }
 
 export function titleColor(t) {

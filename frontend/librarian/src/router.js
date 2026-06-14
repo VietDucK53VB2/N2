@@ -11,6 +11,7 @@ export default createRouter({
         { path: 'loans', name: 'loans', component: () => import('./views/Loans.vue') },
         { path: 'search', name: 'search', component: () => import('./views/Search.vue') },
         { path: 'return', name: 'return', component: () => import('./views/Return.vue') },
+        { path: 'reviews', name: 'reviews', component: () => import('./views/Reviews.vue') },
         { path: 'fines', name: 'fines', component: () => import('./views/Fines.vue') }
       ]
     }

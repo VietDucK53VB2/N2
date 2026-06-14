@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Circulation - Borrow</title>
+</head>
+<body>
+  <h1>Tạo phiếu mượn</h1>
+  <form id="borrowForm">
+    <label>BookId: <input name="BookId" /></label><br/>
+    <label>ISBN: <input name="Isbn" /></label><br/>
+    <label>UserId (GUID): <input name="UserId" /></label><br/>
+    <label>CardNumber (LIB-...): <input name="CardNumber" /></label><br/>
+    <button type="submit">Borrow</button>
+  </form>
+  <pre id="result"></pre>
+
+  <script>
+    const form = document.getElementById('borrowForm');
+    const result = document.getElementById('result');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = {
+        BookId: form.BookId.value,
+        Isbn: form.Isbn.value || undefined,
+        UserId: form.UserId.value || undefined,
+        CardNumber: form.CardNumber.value || undefined
+      };
+      const resp = await fetch('/api/circulation/borrow', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const text = await resp.text();
+      result.textContent = `HTTP ${resp.status}\n` + text;
+    });
+  </script>
+</body>
+</html>

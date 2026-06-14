@@ -19,15 +19,15 @@
     </v-chip-group>
 
     <v-row v-if="filteredBooks.length">
-      <v-col v-for="tx in filteredBooks" :key="tx.Id || tx.id" cols="12" sm="6" lg="4" xl="3">
-        <v-card class="book-item" hover>
+      <v-col v-for="tx in filteredBooks" :key="tx.Id || tx.id" cols="6" sm="4" md="3" lg="2" xl="2" class="d-flex">
+        <v-card class="book-item" hover @click="openDetail(tx)">
           <div class="book-cover" :style="{ backgroundColor: titleColor(tx.TenSach || tx.tenSach) }">
-            <v-img v-if="tx.ImageUrl || tx.imageUrl" :src="tx.ImageUrl || tx.imageUrl" cover height="100%" />
+            <v-img v-if="tx.ImageUrl || tx.imageUrl" :src="tx.ImageUrl || tx.imageUrl" cover class="cover-img" />
             <v-icon v-else size="48" color="white" style="opacity:0.3">mdi-book-open-variant</v-icon>
             <div class="cover-gradient"></div>
             <div class="cover-info">
-              <p class="text-body-2 font-weight-bold text-white">{{ tx.TenSach || tx.tenSach || '—' }}</p>
-              <p class="text-caption text-white-50">{{ tx.TacGia || tx.tacGia || '—' }}</p>
+              <p class="text-body-2 font-weight-bold text-white">{{ tx.TenSach || tx.tenSach || '-' }}</p>
+              <p class="text-caption text-white-50">{{ tx.TacGia || tx.tacGia || '-' }}</p>
             </div>
             <v-chip class="status-chip" size="x-small" :color="statusColor(tx)" variant="flat">
               <v-icon start size="10">{{ statusIcon(tx) }}</v-icon>
@@ -35,27 +35,45 @@
             </v-chip>
           </div>
 
-          <v-card-text class="pa-4">
+          <v-card-text class="pa-3">
             <v-row dense class="mb-3">
               <v-col cols="6">
                 <div class="date-box">
                   <span class="date-label">Ngày mượn</span>
-                  <span class="date-value">{{ formatDate(tx.BorrowedAt || tx.borrowedAt) }}</span>
+                  <span class="date-value">{{ formatDateTime(tx.BorrowedAt || tx.borrowedAt) }}</span>
                 </div>
               </v-col>
               <v-col cols="6">
                 <div class="date-box">
                   <span class="date-label">Hạn trả</span>
                   <span class="date-value" :class="{ 'text-error': store.isOverdue(tx) }">
-                    {{ formatDate(tx.DueAt || tx.dueAt) }}
+                    {{ formatDateTime(tx.DueAt || tx.dueAt) }}
                   </span>
                 </div>
               </v-col>
             </v-row>
 
+            <div v-if="isLoanClockActive(tx)" class="time-summary mb-3">
+              <span>Đã mượn: {{ borrowedDuration(tx) }}</span>
+              <span :class="{ 'text-error': store.isOverdue(tx) }">Còn lại: {{ dueCountdown(tx) }}</span>
+            </div>
+            <div v-else class="time-summary pending mb-3">
+              <span>Yêu cầu gửi lúc: {{ formatDateTime(tx.BorrowedAt || tx.borrowedAt) }}</span>
+              <span>Chưa bắt đầu tính thời gian mượn</span>
+            </div>
+
             <v-progress-linear
+              v-if="isLoanClockActive(tx)"
               :model-value="progressPercent(tx)"
               :color="progressColor(tx)"
+              rounded
+              height="6"
+              class="mb-4"
+            />
+            <v-progress-linear
+              v-else
+              model-value="8"
+              color="warning"
               rounded
               height="6"
               class="mb-4"
@@ -67,7 +85,7 @@
               color="success"
               prepend-icon="mdi-undo"
               :disabled="store.isPending(tx) || store.isReturnPending(tx)"
-              @click="openReturn(tx)"
+              @click.stop="openReturn(tx)"
             >
               {{ returnButtonText(tx) }}
             </v-btn>
@@ -77,10 +95,10 @@
               variant="text"
               color="amber-darken-2"
               prepend-icon="mdi-star"
-              :disabled="hasReviewed(tx)"
-              @click="openReview(tx)"
+              :disabled="!canReview(tx)"
+              @click.stop="openReview(tx)"
             >
-              {{ hasReviewed(tx) ? 'Đã đánh giá' : 'Đánh giá' }}
+              {{ reviewButtonText(tx) }}
             </v-btn>
           </v-card-text>
         </v-card>
@@ -140,6 +158,35 @@
       </v-card>
     </v-dialog>
 
+    <v-dialog v-model="detailDialog" max-width="520">
+      <v-card rounded="xl">
+        <v-card-title class="d-flex align-center ga-2 text-h6 font-weight-bold">
+          <v-btn icon="mdi-arrow-left" variant="text" size="small" @click="detailDialog = false" />
+          Chi tiết phiếu mượn
+        </v-card-title>
+        <v-card-text v-if="detailTx">
+          <v-list density="compact" lines="two">
+            <v-list-item title="Sách" :subtitle="`${detailTx.TenSach || detailTx.tenSach || '-'} - ${detailTx.TacGia || detailTx.tacGia || '-'}`" />
+            <v-list-item title="Mã sách" :subtitle="String(store.bookIdOf(detailTx) || '-')" />
+            <v-list-item title="Trạng thái" :subtitle="statusText(detailTx)" />
+            <v-list-item title="Ngày mượn" :subtitle="formatDateTime(detailTx.BorrowedAt || detailTx.borrowedAt)" />
+            <v-list-item title="Hạn trả" :subtitle="formatDateTime(detailTx.DueAt || detailTx.dueAt)" />
+            <template v-if="isLoanClockActive(detailTx)">
+              <v-list-item title="Thời gian đã mượn" :subtitle="borrowedDuration(detailTx)" />
+              <v-list-item title="Thời gian còn lại" :subtitle="dueCountdown(detailTx)" />
+            </template>
+            <template v-else>
+              <v-list-item title="Thời gian mượn" subtitle="Chưa bắt đầu vì phiếu mượn chưa được duyệt" />
+            </template>
+          </v-list>
+        </v-card-text>
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="text" @click="detailDialog = false">Trở ra</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <BorrowDialog v-model="borrowDialog" @success="handleBorrowSuccess" />
     <v-snackbar v-model="snackbar" :color="snackbarColor" timeout="3000" location="bottom right">
       {{ snackbarText }}
@@ -148,7 +195,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '@/stores/app'
 import {
   getReaderCard,
@@ -157,7 +204,7 @@ import {
   reviewBook as apiReviewBook,
   fetchBookReviews
 } from '@/utils/api'
-import { titleColor, formatDate, daysLeft } from '@/utils/helpers'
+import { titleColor, formatDateTime, daysLeft, durationSince, timeUntil } from '@/utils/helpers'
 import BorrowDialog from '@/components/BorrowDialog.vue'
 
 const store = useAppStore()
@@ -176,7 +223,11 @@ const reviewRating = ref(5)
 const reviewComment = ref('')
 const reviewError = ref('')
 const reviewing = ref(false)
-const reviewedBookIds = ref(new Set())
+const reviewedTransactionIds = ref(new Set())
+const detailDialog = ref(false)
+const detailTx = ref(null)
+const now = ref(Date.now())
+let clockTimer = null
 
 const visibleTransactions = computed(() => [...store.pendingTransactions, ...store.activeTransactions])
 const filteredBooks = computed(() => {
@@ -247,6 +298,31 @@ function openReturn(tx) {
   returnDialog.value = true
 }
 
+function openDetail(tx) {
+  detailTx.value = tx
+  detailDialog.value = true
+}
+
+function isLoanClockActive(tx) {
+  return !!tx && (store.isBorrowed(tx) || store.isOverdue(tx) || store.isReturnPending(tx))
+}
+
+function borrowedDuration(tx) {
+  now.value
+  const start = tx?.BorrowedAt || tx?.borrowedAt
+  const returnedAt = tx?.ReturnedAt || tx?.returnedAt
+  if (store.isReturned(tx) && returnedAt) return durationSince(start, new Date(returnedAt).getTime())
+  if (!isLoanClockActive(tx)) return 'Chưa bắt đầu'
+  return durationSince(start)
+}
+
+function dueCountdown(tx) {
+  now.value
+  if (store.isReturned(tx)) return 'Đã hoàn tất'
+  if (!isLoanClockActive(tx)) return 'Chưa bắt đầu'
+  return timeUntil(tx?.DueAt || tx?.dueAt)
+}
+
 async function submitReturn() {
   const tx = returnBookData.value
   if (!tx) return
@@ -279,6 +355,12 @@ async function submitReturn() {
 }
 
 function openReview(tx) {
+  if (store.isPending(tx)) {
+    snackbarText.value = 'Bạn cần chờ thủ thư duyệt mượn trước khi đánh giá sách.'
+    snackbarColor.value = 'info'
+    snackbar.value = true
+    return
+  }
   if (hasReviewed(tx)) {
     snackbarText.value = 'Bạn đã đánh giá cuốn sách này rồi.'
     snackbarColor.value = 'info'
@@ -295,8 +377,9 @@ function openReview(tx) {
 async function submitReview() {
   const tx = reviewBookData.value
   const bookId = store.bookIdOf(tx)
+  const transactionId = tx?.Id || tx?.id
   const cardNumber = store.cardNumberOf(tx) || getReaderCard()
-  if (!bookId || !cardNumber) {
+  if (!bookId || !transactionId || !cardNumber) {
     reviewError.value = 'Thiếu mã sách hoặc mã thẻ, không thể đánh giá.'
     return
   }
@@ -304,13 +387,14 @@ async function submitReview() {
   reviewError.value = ''
   try {
     const r = await apiReviewBook(bookId, {
+      transactionId,
       cardNumber,
       rating: Math.max(0, Math.min(5, Number(reviewRating.value) || 0)),
       comment: reviewComment.value
     })
     if (r.ok) {
       reviewDialog.value = false
-      reviewedBookIds.value = new Set([...reviewedBookIds.value, String(bookId)])
+      reviewedTransactionIds.value = new Set([...reviewedTransactionIds.value, String(transactionId)])
       snackbarText.value = 'Đã gửi đánh giá.'
       snackbarColor.value = 'success'
       snackbar.value = true
@@ -333,6 +417,10 @@ async function handleBorrowSuccess() {
 }
 
 async function loadData() {
+  await store.loadUserInfo()
+  if (!store.books.length) {
+    await store.loadBooks()
+  }
   await store.loadMyTransactions()
   await loadMyReviews()
 }
@@ -340,46 +428,93 @@ async function loadData() {
 async function loadMyReviews() {
   const cardNumber = getReaderCard()
   if (!cardNumber) {
-    reviewedBookIds.value = new Set()
+    reviewedTransactionIds.value = new Set()
     return
   }
 
   const groups = await fetchBookReviews()
   const ids = new Set()
   for (const group of groups || []) {
-    const bookId = group.bookId || group.BookId
     const reviews = group.reviews || group.Reviews || []
-    const alreadyReviewed = reviews.some(review =>
-      String(review.cardNumber || review.CardNumber || '').toLowerCase() === String(cardNumber).toLowerCase()
-    )
-    if (bookId && alreadyReviewed) ids.add(String(bookId))
+    for (const review of reviews) {
+      const reviewCard = review.cardNumber || review.CardNumber || ''
+      const transactionId = review.transactionId || review.TransactionId
+      if (transactionId && String(reviewCard).toLowerCase() === String(cardNumber).toLowerCase()) {
+        ids.add(String(transactionId))
+      }
+    }
   }
-  reviewedBookIds.value = ids
+  reviewedTransactionIds.value = ids
 }
 
 function hasReviewed(tx) {
-  const bookId = store.bookIdOf(tx)
-  return bookId ? reviewedBookIds.value.has(String(bookId)) : false
+  const transactionId = tx?.Id || tx?.id
+  return transactionId ? reviewedTransactionIds.value.has(String(transactionId)) : false
 }
 
-onMounted(loadData)
+function canReview(tx) {
+  return !store.isPending(tx) && !hasReviewed(tx)
+}
+
+function reviewButtonText(tx) {
+  if (store.isPending(tx)) return 'Chờ duyệt mới đánh giá'
+  if (hasReviewed(tx)) return 'Đã đánh giá'
+  return 'Đánh giá'
+}
+
+onMounted(() => {
+  clockTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+  loadData()
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer) window.clearInterval(clockTimer)
+})
 </script>
 
 <style scoped lang="scss">
 .book-item {
+  width: 100%;
+  height: 100%;
+  display: flex !important;
+  flex-direction: column;
   overflow: hidden;
+  border-radius: 12px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
   transition: transform 0.25s, box-shadow 0.25s;
   &:hover {
-    transform: translateY(-4px);
+    transform: translateY(-6px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15) !important;
+    .cover-img { transform: scale(1.05); }
   }
 }
 .book-cover {
   position: relative;
-  height: 200px;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+.cover-img {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  transition: transform 0.35s ease !important;
+}
+:deep(.book-cover .v-img) {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+:deep(.book-cover .v-img__img) {
+  object-fit: cover !important;
 }
 .cover-gradient {
   position: absolute;
@@ -389,21 +524,21 @@ onMounted(loadData)
 }
 .cover-info {
   position: absolute;
-  bottom: 12px;
-  left: 12px;
-  right: 12px;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
   z-index: 2;
 }
 .status-chip {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 6px;
+  right: 6px;
   z-index: 2;
 }
 .date-box {
   background: #faf7f2;
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 8px;
+  padding: 7px 8px;
 }
 .date-label {
   display: block;
@@ -414,10 +549,28 @@ onMounted(loadData)
   margin-bottom: 3px;
 }
 .date-value {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.book-item :deep(.v-card-text) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.time-summary {
+  display: grid;
+  gap: 4px;
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+.time-summary.pending {
+  color: #b45309;
 }
 .text-white-50 {
   color: rgba(255,255,255,0.6) !important;
 }
 </style>
+

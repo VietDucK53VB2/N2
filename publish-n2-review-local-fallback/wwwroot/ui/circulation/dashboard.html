@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartLib - Tự Phục Vụ</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'library-warm': '#fbf9f6',
+            'library-text': '#5a4d44',
+            'library-accent': '#8b7a6d'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { width: 100%; height: 100%; }
+    body { margin: 0; font-family: 'Inter', sans-serif; background-color: #f1efeb; overflow: hidden; }
+    .shelf-row { height: 12px; background: #e9e4dc; border-radius: 4px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); margin-top: -8px; }
+    .book-item { transition: transform 0.2s ease; }
+    .book-item:hover { transform: translateY(-8px) scale(1.05); }
+    .glass-sidebar { background-color: transparent; }
+    .main-panel { background-color: #fbf9f6; border-radius: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.02); }
+    .inset-input { background-color: #f3f0ec; border: none; border-radius: 12px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.03); }
+    .active-nav { background-color: #ede9e3; font-weight: 600; }
+    .tab-active { background-color: #ffffff; color: #5a4d44; font-weight: 700; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    .tab-panel[hidden] { display: none !important; }
+    
+    /* Responsive sidebar */
+    @media (max-width: 1024px) {
+      .glass-sidebar {
+        position: fixed;
+        left: -100%;
+        top: 0;
+        height: 100vh;
+        z-index: 50;
+        transition: left 0.3s ease;
+        background: #fbf9f6;
+        padding: 1.5rem;
+      }
+      .glass-sidebar.open {
+        left: 0;
+      }
+      .main-panel {
+        border-radius: 1rem;
+        width: 100% !important;
+      }
+    }
+    
+    /* Mobile menu toggle */
+    .mobile-menu-btn {
+      display: none;
+    }
+    @media (max-width: 1024px) {
+      .mobile-menu-btn {
+        display: flex;
+      }
+    }
+    
+    /* Fluid typography */
+    html { font-size: clamp(12px, 1vw, 16px); }
+    
+    /* Container max-width */
+    .content-container {
+      max-width: 100%;
+    }
+    @media (min-width: 1536px) {
+      .content-container {
+        max-width: 1536px;
+        margin: 0 auto;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+<!-- Mobile Menu Button -->
+<button id="mobileMenuBtn" class="mobile-menu-btn fixed top-4 left-4 z-50 w-12 h-12 bg-white border border-gray-300 rounded-xl flex items-center justify-center shadow-sm">
+  <i class="fa-solid fa-bars text-lg text-emerald-800"></i>
+</button>
+
+<!-- Sidebar Overlay -->
+<div id="sidebarOverlay" class="fixed inset-0 bg-black/30 z-40 hidden lg:hidden" onclick="closeSidebar()"></div>
+
+<div class="flex w-screen h-screen gap-0 lg:gap-4 p-0 lg:p-4">
+  <aside class="w-64 flex flex-col p-6 space-y-8 glass-sidebar">
+    <div class="flex items-center gap-3 px-2 mb-4">
+      <div class="w-10 h-10 bg-emerald-700 rounded-xl flex items-center justify-center text-white font-bold text-xl">S</div>
+      <div class="leading-tight">
+        <h1 class="text-library-text font-bold text-lg">SmartLib</h1>
+        <p class="text-xs text-gray-500">Tự Phục Vụ</p>
+      </div>
+    </div>
+
+    <nav class="flex-1 space-y-2">
+      <a class="flex items-center gap-3 px-4 py-3 text-library-text hover:bg-white/50 rounded-2xl transition-all" href="#">Home</a>
+      <a class="flex items-center gap-3 px-4 py-3 active-nav text-library-text rounded-2xl transition-all" href="#">My library</a>
+      <a class="flex items-center gap-3 px-4 py-3 text-library-text hover:bg-white/50 rounded-2xl transition-all" href="#">Shop</a>
+    </nav>
+
+    <div class="mt-auto p-4 bg-white/40 rounded-3xl border border-white/50 shadow-sm">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-10 h-10 rounded-full border-2 border-white bg-gradient-to-br from-slate-200 to-slate-400"></div>
+        <div class="overflow-hidden">
+          <p class="text-xs font-bold text-library-text truncate">Nguyễn Việt Đức</p>
+          <p class="text-[10px] text-gray-500">ID: USER-VD99</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-center text-[10px]">
+        <div class="bg-white/60 p-1 rounded-lg">
+          <p class="font-bold" id="borrowCount">0</p>
+          <p class="text-gray-500 uppercase tracking-tighter">Đang mượn</p>
+        </div>
+        <div class="bg-white/60 p-1 rounded-lg">
+          <p class="font-bold" id="overdueCount">0</p>
+          <p class="text-gray-500 uppercase tracking-tighter">Quá hạn</p>
+        </div>
+      </div>
+      <button class="w-full mt-3 py-2 text-[10px] font-semibold text-red-500 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">Kết Thúc Phiên</button>
+    </div>
+  </aside>
+
+  <main class="flex-1 main-panel p-6 lg:p-8 overflow-y-auto min-h-0">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+      <div class="flex gap-2 bg-[#f3f0ec] p-1 rounded-2xl w-fit" role="tablist" aria-label="Điều hướng chức năng">
+        <button id="tabBorrow" class="px-5 py-2 rounded-xl tab-active text-sm font-semibold text-library-text" data-tab="borrow" type="button">Mượn Sách Mới</button>
+        <button id="tabLibrary" class="px-5 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-library-text" data-tab="library" type="button">Tủ Sách Tôi Mượn (<span id="borrowShelfCount">0</span>)</button>
+        <button id="tabJournal" class="px-5 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-library-text" data-tab="journal" type="button">Nhật Ký</button>
+      </div>
+      <div class="relative flex-1 max-w-md">
+        <span class="absolute inset-y-0 left-4 flex items-center text-gray-400">🔍</span>
+        <input id="searchBox" class="w-full pl-10 pr-4 py-2.5 inset-input text-sm focus:ring-0" placeholder="Tìm kiếm sách, tác giả hoặc mã..." type="text" />
+      </div>
+    </div>
+
+    <section id="borrowTabPanel" class="tab-panel mb-12">
+      <h2 class="text-library-text font-bold text-xl mb-6">Đăng ký Mượn Sách</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-white/30 p-6 rounded-[2.5rem] border border-white/50">
+        <div>
+          <label class="block text-[11px] font-bold text-gray-400 uppercase ml-1 mb-2">ISBN CỦA SÁCH</label>
+          <input id="isbn" class="w-full p-3 inset-input text-sm" placeholder="9786045635261" type="text" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-gray-400 uppercase ml-1 mb-2">BOOK ID (UUID)</label>
+          <input id="bookId" class="w-full p-3 inset-input text-sm" placeholder="Hoặc dán Book UUID..." type="text" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-gray-400 uppercase ml-1 mb-2">THỜI GIAN MƯỢN</label>
+          <input id="borrowDate" class="w-full p-3 inset-input text-sm" type="datetime-local" />
+        </div>
+        <button id="borrowBtn" class="bg-emerald-800 text-white font-bold py-3.5 rounded-xl hover:bg-emerald-900 transition-shadow shadow-lg shadow-emerald-900/10">Xác Nhận Mượn</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+        <div class="bg-white/50 border border-white/70 rounded-3xl p-5">
+          <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-semibold mb-2">Tổng số phiếu mượn</p>
+          <div class="text-3xl font-bold text-library-text" id="borrowedTotal">0</div>
+        </div>
+        <div class="bg-white/50 border border-white/70 rounded-3xl p-5">
+          <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-semibold mb-2">Sách quá hạn</p>
+          <div class="text-3xl font-bold text-library-text" id="overdueTotal">0</div>
+        </div>
+        <div class="bg-white/50 border border-white/70 rounded-3xl p-5">
+          <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-semibold mb-2">Tiền phạt</p>
+          <div class="text-3xl font-bold text-library-text" id="fineTotal">0</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="space-y-16">
+      <section id="libraryTabPanel" class="tab-panel" hidden>
+        <div class="flex justify-between items-center mb-10">
+          <h3 class="text-library-text font-bold text-lg">Tủ Sách Tôi Mượn</h3>
+          <span class="text-xs font-bold text-library-accent">Dữ liệu từ nhật ký mượn</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" id="borrowedShelf"></div>
+        <div class="mt-8 bg-white/30 p-5 rounded-2xl border border-white/50">
+          <div class="flex items-center justify-between mb-4">
+            <h4 class="font-bold text-library-text">Sách quá hạn</h4>
+            <span class="text-xs text-gray-400">Cập nhật từ API /overdue</span>
+          </div>
+          <div id="overdueList" class="space-y-3 text-sm text-library-text"></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="flex justify-between items-center mb-10">
+          <h3 class="text-library-text font-bold text-lg">Danh mục Sách có tại Quầy</h3>
+          <a class="text-xs font-bold text-library-accent flex items-center gap-1" href="#">Full shelf <span>→</span></a>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-8 gap-y-12" id="booksList"></div>
+      </section>
+
+      <section>
+        <div class="flex justify-between items-center mb-10">
+          <h3 class="text-library-text font-bold text-lg">Gợi ý cho bạn</h3>
+          <a class="text-xs font-bold text-library-accent flex items-center gap-1" href="#">Full shelf <span>→</span></a>
+        </div>
+        <div id="suggestionsList" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-8 gap-y-12">
+          <div class="flex flex-col items-center"><div class="book-item w-28 h-40 bg-[#f8f5f0] border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center cursor-pointer"><span class="text-4xl text-gray-300">+</span></div><div class="shelf-row w-36"></div></div>
+          <div class="flex flex-col items-center"><div class="book-item w-28 h-40 bg-zinc-200 rounded-sm shadow-md"></div><div class="shelf-row w-36"></div></div>
+          <div class="flex flex-col items-center"><div class="book-item w-28 h-40 bg-stone-300 rounded-sm shadow-md"></div><div class="shelf-row w-36"></div></div>
+        </div>
+      </section>
+
+      <section id="journalTabPanel" class="tab-panel" hidden>
+        <div class="flex justify-between items-center mb-6">
+          <h3 class="text-library-text font-bold text-lg">Nhật ký</h3>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div class="bg-white/30 p-5 rounded-2xl border border-white/50 text-sm text-library-text min-h-20">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="font-bold">Sự kiện gần đây</h4>
+              <span class="text-xs text-gray-400">/events</span>
+            </div>
+            <div id="eventsPreview" class="whitespace-pre-line">Chưa có</div>
+          </div>
+          <div class="bg-white/30 p-5 rounded-2xl border border-white/50 text-sm text-library-text min-h-20">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="font-bold">Tiền phạt gần đây</h4>
+              <span class="text-xs text-gray-400">/fines</span>
+            </div>
+            <div id="finesPreview" class="space-y-3">Chưa có</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+let dashboardState = {
+  books: [],
+  events: [],
+  fines: [],
+  overdue: [],
+  monthlyStats: []
+};
+
+const tabButtons = {
+  borrow: document.getElementById('tabBorrow'),
+  library: document.getElementById('tabLibrary'),
+  journal: document.getElementById('tabJournal')
+};
+
+const tabPanels = {
+  borrow: document.getElementById('borrowTabPanel'),
+  library: document.getElementById('libraryTabPanel'),
+  journal: document.getElementById('journalTabPanel')
+};
+
+const searchBox = document.getElementById('searchBox');
+
+function setActiveTab(tabName) {
+  Object.entries(tabButtons).forEach(([name, button]) => {
+    button.classList.toggle('tab-active', name === tabName);
+    button.classList.toggle('text-gray-500', name !== tabName);
+    button.classList.toggle('font-medium', name !== tabName);
+  });
+  Object.entries(tabPanels).forEach(([name, panel]) => {
+    panel.hidden = name !== tabName;
+  });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '---';
+  try {
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    }).format(new Date(iso));
+  } catch { return iso; }
+}
+
+function fmtDate(iso) {
+  if (!iso) return '---';
+  try {
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    }).format(new Date(iso));
+  } catch { return iso; }
+}
+
+function safeParse(json) {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function moneyFormat(value) {
+  return new Intl.NumberFormat('vi-VN').format(value) + ' đ';
+}
+
+function setLoadingBtn(btn, loading, text) {
+  btn.disabled = loading;
+  btn.textContent = loading ? 'Đang xử lý...' : text;
+}
+
+async function loadDashboardData() {
+  const [booksResponse, eventsResponse, overdueResponse, finesResponse, statsResponse] = await Promise.allSettled([
+    fetch('/api/circulation/books'),
+    fetch('/api/circulation/events'),
+    fetch('/api/circulation/overdue'),
+    fetch('/api/circulation/fines'),
+    fetch('/api/circulation/stats/monthly')
+  ]);
+
+  const errors = [];
+  if (booksResponse.status === 'fulfilled' && booksResponse.value.ok) {
+    dashboardState.books = await booksResponse.value.json();
+  } else if (booksResponse.status === 'rejected') {
+    errors.push('Không tải được danh sách sách');
+  }
+
+  if (eventsResponse.status === 'fulfilled' && eventsResponse.value.ok) {
+    dashboardState.events = await eventsResponse.value.json();
+  } else if (eventsResponse.status === 'rejected') {
+    errors.push('Không tải được nhật ký sự kiện');
+  }
+
+  if (overdueResponse.status === 'fulfilled' && overdueResponse.value.ok) {
+    dashboardState.overdue = await overdueResponse.value.json();
+  } else if (overdueResponse.status === 'rejected') {
+    errors.push('Không tải được danh sách quá hạn');
+  }
+
+  if (finesResponse.status === 'fulfilled' && finesResponse.value.ok) {
+    dashboardState.fines = await finesResponse.value.json();
+  } else if (finesResponse.status === 'rejected') {
+    errors.push('Không tải được danh sách phí phạt');
+  }
+
+  if (statsResponse.status === 'fulfilled' && statsResponse.value.ok) {
+    dashboardState.monthlyStats = await statsResponse.value.json();
+  } else if (statsResponse.status === 'rejected') {
+    errors.push('Không tải được thống kê');
+  }
+
+  if (errors.length > 0) {
+    console.warn('Dashboard load errors:', errors);
+  }
+
+  renderBooks();
+  renderBorrowedShelf();
+  renderOverdue();
+  renderFines();
+  renderEvents();
+  renderStats();
+}
+
+function renderBorrowedShelf() {
+  const borrowedEvents = dashboardState.events.filter(item => item.eventType === 'book.borrowed').slice(0, 6);
+  document.getElementById('borrowCount').textContent = String(borrowedEvents.length);
+  document.getElementById('borrowShelfCount').textContent = String(borrowedEvents.length);
+  document.getElementById('borrowedTotal').textContent = String(borrowedEvents.length);
+
+  const borrowedShelf = document.getElementById('borrowedShelf');
+  if (borrowedEvents.length === 0) {
+    borrowedShelf.innerHTML = '<div class="text-sm text-gray-500 bg-white/30 border border-dashed border-white/70 rounded-2xl p-6">Chưa có sách nào được mượn.</div>';
+    return;
+  }
+
+  borrowedShelf.innerHTML = borrowedEvents.map(item => {
+    const payload = safeParse(item.payloadJson) || {};
+    const eventId = item.id || item.Id || '';
+    return `
+      <article class="bg-white/50 border border-white/70 rounded-3xl p-5 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400 font-semibold">Phiếu mượn</p>
+            <h4 class="text-lg font-bold text-library-text mt-2">${escapeHtml(payload.bookId || item.BookId || 'Không rõ sách')}</h4>
+            <p class="text-sm text-gray-500 mt-1">${escapeHtml(payload.userId || payload.cardNumber || 'Chưa có người mượn')}</p>
+          </div>
+          <span class="text-[11px] px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold">${escapeHtml(item.eventType || '')}</span>
+        </div>
+        <div class="mt-4 text-sm text-gray-500 space-y-1">
+          <p>ISBN: ${escapeHtml(payload.isbn || '---')}</p>
+          <p>Thời gian: ${fmtDateTime(item.publishedAt || payload.timestamp || '')}</p>
+        </div>
+        <button
+          onclick="returnSingleBorrow('${eventId}', ${JSON.stringify(payload).replace(/'/g, "&#39;")})"
+          class="mt-4 w-full py-2 text-sm font-semibold bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200">
+          Trả sách
+        </button>
+      </article>
+    `;
+  }).join('');
+}
+
+function renderOverdue() {
+  document.getElementById('overdueCount').textContent = String(dashboardState.overdue.length);
+  document.getElementById('overdueTotal').textContent = String(dashboardState.overdue.length);
+
+  const overdueList = document.getElementById('overdueList');
+  if (dashboardState.overdue.length === 0) {
+    overdueList.innerHTML = '<div class="text-sm text-gray-500">Không có sách quá hạn.</div>';
+    return;
+  }
+
+  overdueList.innerHTML = dashboardState.overdue.map(item => `
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 bg-white/50 rounded-2xl p-4">
+      <div>
+        <div class="font-semibold">${escapeHtml(item.bookId || item.BookId || '---')}</div>
+        <div class="text-xs text-gray-500">${escapeHtml(item.userId || item.UserId || item.cardNumber || item.CardNumber || 'Không rõ độc giả')} · đến hạn ${fmtDate(item.dueAt || item.DueAt || '')}</div>
+      </div>
+      <div class="text-xs font-semibold text-red-600">Quá hạn</div>
+    </div>
+  `).join('');
+}
+
+function renderFines() {
+  const totalFine = dashboardState.fines.reduce((sum, fine) => sum + Number(fine.amount || fine.Amount || 0), 0);
+  document.getElementById('fineTotal').textContent = moneyFormat(totalFine);
+
+  const finesPreview = document.getElementById('finesPreview');
+  if (dashboardState.fines.length === 0) {
+    finesPreview.innerHTML = '<div class="text-sm text-gray-400">Chưa có khoản phạt nào.</div>';
+    return;
+  }
+
+  finesPreview.innerHTML = dashboardState.fines.slice(0, 5).map(fine => `
+    <div class="rounded-2xl bg-white/50 p-4 border border-white/70">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="font-semibold">${escapeHtml(fine.reason || fine.Reason || 'Khoản phạt')}</div>
+          <div class="text-xs text-gray-500">${escapeHtml(fine.userId || fine.UserId || fine.cardNumber || fine.CardNumber || 'Chưa rõ độc giả')} · ${fmtDate(fine.createdAt || fine.CreatedAt || '')}</div>
+        </div>
+        <div class="font-bold text-red-700">${moneyFormat(Number(fine.amount || fine.Amount || 0))}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderEvents() {
+  const previewEl = document.getElementById('eventsPreview');
+  if (dashboardState.events.length === 0) {
+    previewEl.innerHTML = '<div class="text-sm text-gray-400">Chưa có</div>';
+    return;
+  }
+
+  previewEl.innerHTML = dashboardState.events.slice(0, 5).map(item =>
+    `<div class="py-1 border-b border-white/30 last:border-0">
+      <span class="font-semibold text-emerald-700">${escapeHtml(item.eventType || '')}</span>
+      <span class="text-gray-400 ml-2">@ ${fmtDateTime(item.publishedAt)}</span>
+    </div>`
+  ).join('');
+}
+
+function renderStats() {
+  const stats = dashboardState.monthlyStats;
+  const header = document.querySelector('#borrowTabPanel h2');
+  if (header && stats.length > 0) {
+    header.textContent = `Đăng ký Mượn Sách · ${stats[stats.length - 1].Month || stats[stats.length - 1].month}`;
+  }
+}
+
+function renderBooks() {
+  const query = (searchBox.value || '').trim().toLowerCase();
+  const books = dashboardState.books.filter(book => {
+    if (!query) return true;
+    return [book.title || book.Title, book.author || book.Author, book.BookId || book.bookId]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+
+  if (books.length === 0) {
+    document.getElementById('booksList').innerHTML = '<div class="text-sm text-gray-500 bg-white/30 border border-dashed border-white/70 rounded-2xl p-6">Chưa có dữ liệu sách thật.</div>';
+    return;
+  }
+
+  document.getElementById('booksList').innerHTML = books.map(b => `
+    <div class="flex flex-col items-center">
+      <div class="book-item w-28 h-40 ${b.Color || b.color || 'bg-white'} rounded-sm shadow-xl flex flex-col p-2 text-white relative cursor-pointer overflow-hidden border border-gray-100">
+        ${b.Image || b.image ? `<img alt="Book cover" class="w-full h-full object-cover" src="${b.Image || b.image}">` : `
+          <p class="text-[6px] opacity-70">SMARTLIB BOOK</p>
+          <p class="text-[10px] font-bold mt-1 line-clamp-2">${escapeHtml(b.Title || b.title)}</p>
+          <div class="mt-auto"><p class="text-[6px] opacity-70">${escapeHtml(b.Author || b.author)}</p></div>
+        `}
+      </div>
+      <div class="shelf-row w-36"></div>
+    </div>
+  `).join('');
+}
+
+tabButtons.borrow.addEventListener('click', () => setActiveTab('borrow'));
+tabButtons.library.addEventListener('click', () => setActiveTab('library'));
+tabButtons.journal.addEventListener('click', () => setActiveTab('journal'));
+searchBox.addEventListener('input', renderBooks);
+
+document.getElementById('borrowBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('borrowBtn');
+  const bookId = document.getElementById('bookId').value.trim();
+  const isbn = document.getElementById('isbn').value.trim();
+  const borrowDate = document.getElementById('borrowDate').value;
+
+  if (!bookId && !isbn) {
+    alert('Vui lòng nhập BookId hoặc ISBN');
+    return;
+  }
+
+  setLoadingBtn(btn, true, 'Xác Nhận Mượn');
+  try {
+    const data = {
+      BookId: bookId || undefined,
+      Isbn: isbn || undefined,
+      UserId: 'USER-VD99',
+      BorrowedAt: borrowDate || undefined
+    };
+    const res = await fetch('/api/circulation/borrow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      const err = (() => { try { return JSON.parse(errBody); } catch { return { Message: errBody }; } })();
+      alert('Lỗi: ' + (err.message || err.Message || 'Không rõ'));
+      return;
+    }
+    alert('Đã tạo phiếu mượn thành công!');
+    document.getElementById('bookId').value = '';
+    document.getElementById('isbn').value = '';
+    document.getElementById('borrowDate').value = '';
+    await loadDashboardData();
+  } catch (err) {
+    alert('Lỗi kết nối: ' + err.message);
+  } finally {
+    setLoadingBtn(btn, false, 'Xác Nhận Mượn');
+  }
+});
+
+async function returnSingleBorrow(eventId, payload) {
+  if (!payload.bookId && !payload.isbn) {
+    alert('Thiếu thông tin sách để trả');
+    return;
+  }
+  if (!confirm('Xác nhận trả sách "' + (payload.bookId || payload.isbn) + '"?')) return;
+  const res = await fetch('/api/circulation/return', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      BookId: payload.bookId || undefined,
+      Isbn: payload.isbn || undefined,
+      UserId: payload.userId || undefined,
+      CardNumber: payload.cardNumber || undefined
+    })
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    const err = (() => { try { return JSON.parse(errBody); } catch { return { Message: errBody }; } })();
+    alert('Lỗi trả sách: ' + (err.message || err.Message || 'Không rõ'));
+    return;
+  }
+  alert('Trả sách thành công!');
+  await loadDashboardData();
+}
+
+async function returnLatestBorrow() {
+  const latestBorrow = dashboardState.events.find(item => item.eventType === 'book.borrowed');
+  if (!latestBorrow) {
+    alert('Chưa có phiếu mượn nào để trả.');
+    return;
+  }
+  const payload = safeParse(latestBorrow.payloadJson) || {};
+  await returnSingleBorrow(latestBorrow.id || latestBorrow.Id, payload);
+}
+
+document.addEventListener('keydown', event => {
+  if (event.ctrlKey && event.key.toLowerCase() === 'r') {
+    event.preventDefault();
+    returnLatestBorrow();
+  }
+});
+
+renderBooks();
+setActiveTab('borrow');
+loadDashboardData();
+
+// Sidebar toggle for mobile
+const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+const sidebar = document.querySelector('.glass-sidebar');
+const overlay = document.getElementById('sidebarOverlay');
+
+function openSidebar() {
+  sidebar.classList.add('open');
+  overlay.classList.remove('hidden');
+}
+function closeSidebar() {
+  sidebar.classList.remove('open');
+  overlay.classList.add('hidden');
+}
+mobileMenuBtn?.addEventListener('click', openSidebar);
+overlay?.addEventListener('click', closeSidebar);
+</script>
+</body>
+</html>

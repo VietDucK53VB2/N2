@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
-  fetchBooks, fetchTransactions, fetchAllTransactions,
+  fetchBooks, fetchCategories, fetchTransactions, fetchAllTransactions,
   fetchFines, getReaderCard, getCachedUserInfo,
-  loadUserProfile as loadProfile
+  loadUserProfile as loadProfile, isStaffRole
 } from '@/utils/api'
+import { categoriesFromBooks, categoriesFromCatalog, mergeCategories } from '@/utils/categories'
 
 export const useAppStore = defineStore('app', () => {
   const books = ref([])
+  const catalogCategories = ref([])
   const myTransactions = ref([])
   const allTransactions = ref([])
   const fines = ref([])
@@ -83,8 +85,19 @@ export const useAppStore = defineStore('app', () => {
     myUnpaidFines.value.reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0)
   )
 
+  const categories = computed(() =>
+    mergeCategories(
+      categoriesFromCatalog(catalogCategories.value),
+      categoriesFromBooks(books.value)
+    )
+  )
+
   async function loadBooks() {
     books.value = await fetchBooks()
+  }
+
+  async function loadCategories() {
+    catalogCategories.value = await fetchCategories()
   }
 
   async function loadMyTransactions() {
@@ -127,23 +140,28 @@ export const useAppStore = defineStore('app', () => {
   async function loadAll() {
     loading.value = true
     try {
-      await loadBooks()
-      await Promise.all([
-        loadMyTransactions(),
-        loadAllTransactions(),
-        loadFines()
-      ])
+      await Promise.all([loadBooks(), loadCategories()])
+      const info = await loadUserInfo()
+      const tasks = [loadMyTransactions()]
+      if (isStaffRole(info?.role)) {
+        tasks.push(loadAllTransactions(), loadFines())
+      } else {
+        allTransactions.value = []
+        fines.value = []
+      }
+      await Promise.all(tasks)
     } finally {
       loading.value = false
     }
   }
 
   return {
-    books, myTransactions, allTransactions, fines, userInfo, loading,
+    books, catalogCategories, myTransactions, allTransactions, fines, userInfo, loading,
+    categories,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, totalUnpaidFines,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
-    loadBooks, loadMyTransactions, loadAllTransactions, loadFines,
+    loadBooks, loadCategories, loadMyTransactions, loadAllTransactions, loadFines,
     loadUserInfo, loadAll
   }
 })

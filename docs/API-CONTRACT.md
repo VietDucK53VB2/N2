@@ -88,7 +88,7 @@ Authorization: Bearer {token}
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/circulation/transactions` | Lấy danh sách phiếu mượn |
+| GET | `/api/circulation/transactions` | Lấy danh sách phiếu mượn, trả kèm alias `createdAt`, `updatedAt`, `requestDate` để N3 không phụ thuộc vào tên cũ |
 | GET | `/api/circulation/transactions?cardNumber={cardNo}` | Lọc theo mã thẻ |
 | GET | `/api/circulation/overdue` | Lấy danh sách quá hạn |
 | GET | `/api/circulation/fines` | Lấy danh sách phí phạt |
@@ -113,6 +113,8 @@ Authorization: Bearer {token}
 | DueAt | datetime2 | Hạn trả |
 | ReturnedAt | datetime2 | Ngày trả |
 | FineAmount | decimal(18,2) | Tiền phạt |
+
+> Ghi chú: response của `/api/circulation/transactions` cũng trả thêm các alias thời gian chuẩn hóa theo ISO 8601: `createdAt = BorrowedAt`, `updatedAt = ReturnedAt ?? BorrowedAt`, `requestDate = BorrowedAt`.
 | Status | nvarchar(20) | Pending/Borrowed/Returned/Overdue |
 
 ### FineCharges
