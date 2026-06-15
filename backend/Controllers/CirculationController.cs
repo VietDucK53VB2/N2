@@ -237,9 +237,119 @@ public sealed class CirculationController : ControllerBase
         return await ReturnTransactionAsync(transaction, DateTime.UtcNow, cancellationToken, condition, conditionNote);
     }
 
+    [HttpPost("transactions/{id:guid}/renew")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> RenewTransactionAsync(
+        Guid id,
+        [FromBody] RenewRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status == "Returned")
+        {
+            return BadRequest(new { Message = "Returned transactions cannot be renewed." });
+        }
+
+        var extraDays = Math.Clamp(request?.ExtraDays ?? 7, 1, 60);
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? $"Gia hạn thêm {extraDays} ngày" : request!.Reason!.Trim();
+        var dueAt = transaction.DueAt.Kind == DateTimeKind.Utc
+            ? transaction.DueAt
+            : DateTime.SpecifyKind(transaction.DueAt, DateTimeKind.Utc);
+        var renewedDueAt = NormalizeUtc(dueAt > DateTime.UtcNow ? dueAt : DateTime.UtcNow);
+        renewedDueAt = NormalizeUtc(renewedDueAt.AddDays(extraDays));
+
+        transaction.DueAt = renewedDueAt;
+        transaction.Status = "Borrowed";
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.renewed", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            ExtraDays = extraDays,
+            Reason = reason,
+            RenewedAt = DateTimeOffset.UtcNow,
+            DueAt = renewedDueAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-rejected-or-approved",
+            Title = "Gia hạn mượn sách",
+            Message = $"Yêu cầu gia hạn đã được duyệt. {reason}.",
+            VisibleToReader = true,
+            CreatedAt = DateTimeOffset.UtcNow
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            message = "Transaction renewed.",
+            transactionId = transaction.Id,
+            dueAt = transaction.DueAt
+        });
+    }
+
+    [HttpPost("transactions/{id:guid}/renew/reject")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> RejectRenewTransactionAsync(
+        Guid id,
+        [FromBody] TransactionRejectRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status == "Returned")
+        {
+            return BadRequest(new { Message = "Returned transactions cannot be renewed." });
+        }
+
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Không đủ điều kiện gia hạn" : request.Reason.Trim();
+        var rejectedAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.renew.rejected", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Reason = reason,
+            RejectedAt = rejectedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-rejected",
+            Title = "Từ chối gia hạn",
+            Message = $"Yêu cầu gia hạn bị từ chối. Lý do: {reason}.",
+            VisibleToReader = true,
+            CreatedAt = rejectedAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Renew request rejected.", TransactionId = transaction.Id, Reason = reason });
+    }
+
     [HttpPost("transactions/{id:guid}/return/reject")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
-    public async Task<ActionResult> RejectReturnAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult> RejectReturnAsync(
+        Guid id,
+        [FromBody] TransactionRejectRequest? request,
+        CancellationToken cancellationToken)
     {
         var transaction = await _dbContext.BorrowTransactions
             .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -254,17 +364,30 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Transaction is not waiting for return approval." });
         }
 
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Không đủ điều kiện trả sách" : request.Reason.Trim();
         transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
         _dbContext.PublishedEventLogs.Add(CreateEventLog("return.rejected", new
         {
             TransactionId = transaction.Id,
             transaction.BookId,
             transaction.CardNumber,
+            Reason = reason,
             RejectedAt = DateTimeOffset.UtcNow
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "return-rejected",
+            Title = "Từ chối trả sách",
+            Message = $"Yêu cầu trả sách bị từ chối. Lý do: {reason}.",
+            VisibleToReader = true,
+            CreatedAt = DateTimeOffset.UtcNow
         }));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { Message = "Return request rejected.", TransactionId = transaction.Id });
+        return Ok(new { Message = "Return request rejected.", TransactionId = transaction.Id, Reason = reason });
     }
 
     private async Task<ActionResult<ReturnResponse>> RequestReturnAsync(
@@ -605,9 +728,6 @@ public sealed class CirculationController : ControllerBase
                 BorrowedAt = r.BorrowedAt,
                 DueAt = r.DueAt,
                 ReturnedAt = r.ReturnedAt,
-                CreatedAt = r.BorrowedAt,
-                UpdatedAt = r.ReturnedAt ?? r.BorrowedAt,
-                RequestDate = r.BorrowedAt,
                 createdAt = ToIsoUtc(r.BorrowedAt),
                 updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
                 requestDate = ToIsoUtc(r.BorrowedAt),
@@ -825,6 +945,7 @@ public sealed class CirculationController : ControllerBase
         ?? _configuration["IdentityService__UserByCardPathTemplate"];
 
     [HttpGet("books")]
+    [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<object>>> GetBooksAsync(
         [FromQuery] string? search,
         [FromQuery] int? limit,
@@ -859,6 +980,7 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("categories")]
+    [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<object>>> GetCategoriesAsync(CancellationToken cancellationToken)
     {
         var paths = new[]
@@ -1256,7 +1378,10 @@ public sealed class CirculationController : ControllerBase
 
     [HttpPost("transactions/{id}/reject")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
-    public async Task<ActionResult> RejectTransactionAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult> RejectTransactionAsync(
+        Guid id,
+        [FromBody] TransactionRejectRequest? request,
+        CancellationToken cancellationToken)
     {
         var transaction = await _dbContext.BorrowTransactions.FindAsync(new object[] { id }, cancellationToken);
         if (transaction is null)
@@ -1265,11 +1390,29 @@ public sealed class CirculationController : ControllerBase
         if (transaction.Status != "Pending")
             return BadRequest(new { Message = "Only pending borrow requests can be rejected." });
 
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Không đủ điều kiện mượn sách" : request.Reason.Trim();
+        var rejectedAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.rejected", new
+        {
+            TransactionId = id,
+            Reason = reason,
+            RejectedAt = rejectedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "borrow-rejected",
+            Title = "Từ chối mượn sách",
+            Message = $"Yêu cầu mượn sách bị từ chối. Lý do: {reason}.",
+            VisibleToReader = true,
+            CreatedAt = rejectedAt
+        }));
         _dbContext.BorrowTransactions.Remove(transaction);
-        _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.rejected", new { TransactionId = id, RejectedAt = DateTimeOffset.UtcNow }));
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { Message = "Transaction rejected.", TransactionId = id });
+        return Ok(new { Message = "Transaction rejected.", TransactionId = id, Reason = reason });
     }
 
     [HttpGet("overdue")]

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="reader-shell">
     <!-- Sidebar: hover to expand, mouse leave to collapse -->
     <v-navigation-drawer
@@ -14,7 +14,7 @@
     >
       <!-- Logo -->
       <div class="sidebar-top">
-        <div class="logo-circle" @click="goRoute('dashboard')">
+        <div class="logo-circle" @click="$router.push('/')">
           <v-icon color="white" size="20">mdi-book-open-page-variant</v-icon>
         </div>
         <transition name="fade-text">
@@ -24,45 +24,27 @@
 
       <!-- Nav Items -->
       <div class="nav-list">
-        <div v-for="(item, idx) in menuItems" :key="item.route" class="nav-group">
-          <div
-            class="nav-item-wrap"
-            :class="{ active: isMenuActive(item) }"
-            :style="{ animationDelay: idx * 50 + 'ms' }"
-            @click="goMenu(item)"
-          >
-            <div class="nav-icon-circle">
-              <v-icon size="18" color="white">{{ item.icon }}</v-icon>
-            </div>
-            <transition name="fade-text">
-              <span v-if="!isRail" class="nav-label">{{ item.title }}</span>
-            </transition>
-            <v-chip
-              v-if="item.badge && !isRail"
-              size="x-small" color="error" variant="flat"
-              class="nav-badge pulse-badge"
-            >
-              {{ item.badge }}
-            </v-chip>
-            <v-icon v-if="item.children && !isRail" size="16" class="nav-chevron">
-              {{ expandedMenus[item.route] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
-            </v-icon>
+        <div
+          v-for="(item, idx) in menuItems"
+          :key="item.route"
+          class="nav-item-wrap"
+          :class="{ active: $route.name === item.route }"
+          :style="{ animationDelay: idx * 50 + 'ms' }"
+          @click="$router.push({ name: item.route })"
+        >
+          <div class="nav-icon-circle">
+            <v-icon size="18" color="white">{{ item.icon }}</v-icon>
           </div>
           <transition name="fade-text">
-            <div v-if="item.children && expandedMenus[item.route] && !isRail" class="nav-children">
-              <button
-                v-for="child in item.children"
-                :key="child.value"
-                type="button"
-                class="nav-child"
-                :class="{ active: $route.name === item.route && $route.params.category === child.value }"
-                @click.stop="goCategory(child.value)"
-              >
-                <span class="nav-child-dot"></span>
-                <span>{{ child.label }}</span>
-              </button>
-            </div>
+            <span v-if="!isRail" class="nav-label">{{ item.title }}</span>
           </transition>
+          <v-chip
+            v-if="item.badge && !isRail"
+            size="x-small" color="error" variant="flat"
+            class="nav-badge pulse-badge"
+          >
+            {{ item.badge }}
+          </v-chip>
         </div>
       </div>
 
@@ -84,6 +66,7 @@
       <v-btn icon variant="text" class="d-md-none" @click="drawer = !drawer">
         <v-icon>mdi-menu</v-icon>
       </v-btn>
+
       <v-text-field
         v-model="searchText"
         prepend-inner-icon="mdi-magnify"
@@ -98,36 +81,9 @@
 
       <v-spacer />
 
-      <v-menu location="bottom end" :close-on-content-click="false">
-        <template #activator="{ props }">
-          <v-badge :content="notificationItems.length" :model-value="notificationItems.length > 0" color="error" overlap>
-            <v-btn v-bind="props" icon="mdi-bell-outline" variant="text" class="btn-glow" />
-          </v-badge>
-        </template>
-        <v-card width="320" rounded="xl" elevation="8" class="notification-card">
-          <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center justify-space-between">
-            <span>Thông báo</span>
-            <v-chip v-if="notificationItems.length" size="x-small" color="error" variant="flat">
-              {{ notificationItems.length }}
-            </v-chip>
-          </v-card-title>
-          <v-divider />
-          <v-list v-if="notificationItems.length" density="compact" lines="two" class="py-1">
-            <v-list-item
-              v-for="item in notificationItems"
-              :key="item.key"
-              :prepend-icon="item.icon"
-              :title="item.title"
-              :subtitle="item.subtitle"
-              @click="goNotification(item)"
-            />
-          </v-list>
-          <div v-else class="pa-5 text-center text-grey">
-            <v-icon size="32" color="grey-lighten-1" class="mb-2">mdi-bell-check-outline</v-icon>
-            <p class="text-body-2 mb-0">Không có thông báo mới</p>
-          </div>
-        </v-card>
-      </v-menu>
+      <v-badge :content="store.overdueTransactions.length" :model-value="store.overdueTransactions.length > 0" color="error" overlap>
+        <v-btn icon="mdi-bell-outline" variant="text" class="btn-glow" />
+      </v-badge>
 
       <v-menu>
         <template #activator="{ props }">
@@ -158,7 +114,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { logout } from '@/utils/api'
@@ -171,99 +127,20 @@ const store = useAppStore()
 const drawer = ref(true)
 const hovered = ref(false)
 const searchText = ref('')
-const expandedMenus = ref({ categories: true })
 
 // Rail mode: collapsed when not hovered
 const isRail = computed(() => !hovered.value)
 
 const initials = computed(() => getInitials(store.userInfo?.fullName))
 
-const notificationItems = computed(() => {
-  const items = []
-  store.overdueTransactions.slice(0, 4).forEach(tx => {
-    items.push({
-      key: `overdue-${tx.Id || tx.id || store.bookIdOf(tx)}`,
-      icon: 'mdi-alert-circle-outline',
-      title: tx.TenSach || tx.tenSach || 'Sách quá hạn',
-      subtitle: 'Sách đã quá hạn trả',
-      route: 'mybooks'
-    })
-  })
-  store.activeTransactions.filter(store.isReturnPending).slice(0, 3).forEach(tx => {
-    items.push({
-      key: `return-${tx.Id || tx.id || store.bookIdOf(tx)}`,
-      icon: 'mdi-book-clock-outline',
-      title: tx.TenSach || tx.tenSach || 'Yêu cầu trả sách',
-      subtitle: 'Đang chờ thủ thư kiểm tra trả sách',
-      route: 'mybooks'
-    })
-  })
-  store.pendingTransactions.slice(0, 3).forEach(tx => {
-    items.push({
-      key: `pending-${tx.Id || tx.id || store.bookIdOf(tx)}`,
-      icon: 'mdi-clock-outline',
-      title: tx.TenSach || tx.tenSach || 'Yêu cầu mượn sách',
-      subtitle: 'Đang chờ thủ thư duyệt mượn',
-      route: 'mybooks'
-    })
-  })
-  return items.slice(0, 8)
-})
-
 const menuItems = computed(() => [
   { title: 'Trang chủ', icon: 'mdi-home-variant', route: 'dashboard' },
   { title: 'Sách của tôi', icon: 'mdi-bookshelf', route: 'mybooks', badge: store.activeTransactions.length || null },
-  { title: 'Yêu thích', icon: 'mdi-heart', route: 'favorites' },
-  { title: 'Thể loại', icon: 'mdi-shape-outline', route: 'categories', children: store.categories },
   { title: 'Lịch sử', icon: 'mdi-history', route: 'history' },
   { title: 'Hồ sơ', icon: 'mdi-account-circle', route: 'profile' }
 ])
 
-async function refreshData() {
-  if (typeof store.loadAll === 'function') await store.loadAll()
-}
-
-async function goRoute(routeName) {
-  if (route.name !== routeName) await router.push({ name: routeName })
-  await refreshData()
-}
-
-function isMenuActive(item) {
-  return route.name === item.route
-}
-
-async function goMenu(item) {
-  if (item.children) {
-    expandedMenus.value = {
-      ...expandedMenus.value,
-      [item.route]: !expandedMenus.value[item.route]
-    }
-    if (route.name !== item.route) await router.push({ name: item.route, params: { category: 'all' } })
-    await refreshData()
-    return
-  }
-  await goRoute(item.route)
-}
-
-async function goCategory(category) {
-  await router.push({ name: 'categories', params: { category } })
-  await refreshData()
-}
-
-async function goNotification(item) {
-  await goRoute(item.route || 'mybooks')
-}
-
-async function onSearch() {
-  if (!searchText.value) return
-  await router.push({ name: 'dashboard', query: { q: searchText.value } })
-  await refreshData()
-}
-
-watch(() => route.name, () => {
-  refreshData()
-})
-
+function onSearch() { if (searchText.value) router.push({ name: 'dashboard', query: { q: searchText.value } }) }
 function handleLogout() { logout() }
 </script>
 
@@ -333,11 +210,6 @@ function handleLogout() { logout() }
   padding: 6px 0;
 }
 
-.nav-group {
-  display: flex;
-  flex-direction: column;
-}
-
 .nav-item-wrap {
   display: flex;
   align-items: center;
@@ -387,46 +259,6 @@ function handleLogout() { logout() }
 }
 
 .nav-badge { margin-left: auto; }
-.nav-chevron {
-  margin-left: auto;
-  color: rgba(255, 255, 255, 0.58);
-}
-.nav-children {
-  margin: 2px 0 6px 24px;
-  padding: 2px 0 2px 18px;
-  border-left: 2px solid rgba(255, 255, 255, 0.18);
-}
-.nav-child {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.66);
-  font-size: 12px;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.nav-child:hover,
-.nav-child.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-.nav-child-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.45);
-  flex-shrink: 0;
-}
-.nav-child.active .nav-child-dot {
-  background: #fbbf24;
-}
 .pulse-badge { animation: pulse 2s infinite; }
 
 .sidebar-bottom {

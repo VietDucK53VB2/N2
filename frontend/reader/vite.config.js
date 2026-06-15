@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const rootDir = path.resolve(__dirname, '..', '..')
 
 export default defineConfig({
   plugins: [
@@ -24,7 +28,7 @@ export default defineConfig({
   },
   base: '/ui/reader/',
   build: {
-    outDir: '../../backend/wwwroot/ui/reader',
+    outDir: path.resolve(rootDir, 'backend', 'wwwroot', 'ui', 'reader'),
     emptyOutDir: true
   }
 })

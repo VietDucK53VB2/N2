@@ -1,17 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
-  fetchBooks, fetchCategories, fetchTransactions, fetchAllTransactions,
-  fetchFines, getReaderCard, getCachedUserInfo,
-  loadUserProfile as loadProfile, isStaffRole
+  fetchBooks, fetchTransactions, fetchAllTransactions,
+  fetchEvents, fetchFines, getReaderCard, getCachedUserInfo,
+  loadUserProfile as loadProfile, normalizeEvent
 } from '@/utils/api'
-import { categoriesFromBooks, categoriesFromCatalog, mergeCategories } from '@/utils/categories'
 
 export const useAppStore = defineStore('app', () => {
   const books = ref([])
-  const catalogCategories = ref([])
   const myTransactions = ref([])
   const allTransactions = ref([])
+  const events = ref([])
   const fines = ref([])
   const userInfo = ref(getCachedUserInfo())
   const loading = ref(false)
@@ -85,19 +84,8 @@ export const useAppStore = defineStore('app', () => {
     myUnpaidFines.value.reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0)
   )
 
-  const categories = computed(() =>
-    mergeCategories(
-      categoriesFromCatalog(catalogCategories.value),
-      categoriesFromBooks(books.value)
-    )
-  )
-
   async function loadBooks() {
     books.value = await fetchBooks()
-  }
-
-  async function loadCategories() {
-    catalogCategories.value = await fetchCategories()
   }
 
   async function loadMyTransactions() {
@@ -127,6 +115,26 @@ export const useAppStore = defineStore('app', () => {
     allTransactions.value = await fetchAllTransactions()
   }
 
+  async function loadEvents() {
+    const card = getReaderCard()
+    const payloads = await fetchEvents()
+    const parsed = payloads
+      .map(normalizeEvent)
+      .map(event => {
+        try {
+          return { ...event, payload: JSON.parse(event.payloadJson || '{}') }
+        } catch {
+          return { ...event, payload: {} }
+        }
+      })
+      .filter(event => {
+        const payload = event.payload || {}
+        const cardNumber = payload.CardNumber || payload.cardNumber || payload.ReaderCardNumber || payload.readerCardNumber || ''
+        return !card || !cardNumber || String(cardNumber) === String(card)
+      })
+    events.value = parsed
+  }
+
   async function loadFines() {
     fines.value = await fetchFines()
   }
@@ -140,28 +148,24 @@ export const useAppStore = defineStore('app', () => {
   async function loadAll() {
     loading.value = true
     try {
-      await Promise.all([loadBooks(), loadCategories()])
-      const info = await loadUserInfo()
-      const tasks = [loadMyTransactions()]
-      if (isStaffRole(info?.role)) {
-        tasks.push(loadAllTransactions(), loadFines())
-      } else {
-        allTransactions.value = []
-        fines.value = []
-      }
-      await Promise.all(tasks)
+      await loadBooks()
+      await Promise.all([
+        loadMyTransactions(),
+        loadAllTransactions(),
+        loadEvents(),
+        loadFines()
+      ])
     } finally {
       loading.value = false
     }
   }
 
   return {
-    books, catalogCategories, myTransactions, allTransactions, fines, userInfo, loading,
-    categories,
+    books, myTransactions, allTransactions, events, fines, userInfo, loading,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, totalUnpaidFines,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
-    loadBooks, loadCategories, loadMyTransactions, loadAllTransactions, loadFines,
+    loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     loadUserInfo, loadAll
   }
 })

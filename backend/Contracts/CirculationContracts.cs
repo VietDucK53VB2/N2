@@ -26,6 +26,11 @@ public sealed record BorrowPolicyRequest
     public int MonthlyBorrowLimit { get; init; } = 5;
 }
 
+public sealed record TransactionRejectRequest
+{
+    public string? Reason { get; init; }
+}
+
 public sealed record ReturnRequest
 {
     public string BookId { get; init; } = string.Empty;
@@ -44,6 +49,13 @@ public sealed record ReturnApprovalRequest
     public string Condition { get; init; } = "Good";
 
     public string? ConditionNote { get; init; }
+}
+
+public sealed record RenewRequest
+{
+    public int ExtraDays { get; init; } = 7;
+
+    public string? Reason { get; init; }
 }
 
 public sealed record BookReviewRequest

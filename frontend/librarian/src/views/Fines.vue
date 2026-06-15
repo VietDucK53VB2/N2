@@ -18,7 +18,7 @@
       </a-col>
     </a-row>
 
-    <a-card title="Danh sách phí phạt" :body-style="{ padding: 0 }">
+    <a-card title="Danh sách Phí phạt" :body-style="{ padding: 0 }">
       <a-table
         :columns="columns"
         :data-source="store.fines"
@@ -28,26 +28,19 @@
         row-key="Id"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'reader'">
-            <div>
-              <div class="font-medium">{{ fineReaderName(record) }}</div>
-              <div class="muted">{{ record.CardNumber || record.cardNumber || '—' }}</div>
-            </div>
+          <template v-if="column.key === 'Amount'">
+            <span style="font-weight:700;color:#cf1322">{{ Number(record.Amount || record.amount || 0).toLocaleString() }} đ</span>
           </template>
-          <template v-else-if="column.key === 'Amount'">
-            <span class="money">{{ Number(record.Amount || record.amount || 0).toLocaleString() }} đ</span>
-          </template>
-          <template v-else-if="column.key === 'CreatedAt'">{{ fmtDate(record.CreatedAt || record.createdAt) }}</template>
-          <template v-else-if="column.key === 'IsPaid'">
+          <template v-if="column.key === 'CreatedAt'">{{ fmtDate(record.CreatedAt || record.createdAt) }}</template>
+          <template v-if="column.key === 'IsPaid'">
             <a-tag :color="(record.IsPaid || record.isPaid) ? 'green' : 'red'">
               {{ (record.IsPaid || record.isPaid) ? 'Đã thu' : 'Chưa thu' }}
             </a-tag>
           </template>
-          <template v-else-if="column.key === 'actions'">
+          <template v-if="column.key === 'actions'">
             <a-button
               v-if="!(record.IsPaid || record.isPaid)"
-              type="primary"
-              size="small"
+              type="primary" size="small"
               :loading="payingId === (record.Id || record.id)"
               @click="markPaid(record)"
             >
@@ -72,44 +65,26 @@ const payingId = ref(null)
 const paidCount = computed(() => store.paidFines.length)
 
 const columns = [
-  { title: 'Độc giả', key: 'reader', width: 220 },
-  { title: 'Số tiền', key: 'Amount', width: 130 },
-  { title: 'Lý do', dataIndex: 'Reason', key: 'Reason', width: 240 },
-  { title: 'Ngày tạo', key: 'CreatedAt', width: 130 },
-  { title: 'Trạng thái', key: 'IsPaid', width: 110 },
-  { title: '', key: 'actions', width: 110 }
+  { title: 'Mã thẻ', dataIndex: 'CardNumber', key: 'CardNumber', width: 140 },
+  { title: 'Số tiền', key: 'Amount', width: 120 },
+  { title: 'Lý do', dataIndex: 'Reason', key: 'Reason', width: 200 },
+  { title: 'Ngày tạo', key: 'CreatedAt', width: 120 },
+  { title: 'Trạng thái', key: 'IsPaid', width: 100 },
+  { title: '', key: 'actions', width: 100 }
 ]
 
-async function markPaid(record) {
-  const id = record.Id || record.id
+async function markPaid(r) {
+  const id = r.Id || r.id
   payingId.value = id
-  const response = await store.payFine(id)
-  if (response.ok) message.success('Đã đánh dấu thu.')
-  else message.error('Không thu được phí.')
+  const res = await store.payFine(id)
+  if (res.ok) message.success('Đã đánh dấu thu!')
+  else message.error('Lỗi')
   payingId.value = null
 }
 
-function fineReaderName(record = {}) {
-  const card = record.CardNumber || record.cardNumber || ''
-  const transaction = store.transactions.find(item => store.cardNumberOf(item) === card)
-  return transaction ? store.readerNameOf(transaction) : card || '—'
-}
-
-function fmtDate(date) {
-  return date ? dayjs(date).format('DD/MM/YYYY HH:mm:ss') : '—'
-}
+function fmtDate(d) { return d ? dayjs(d).format('DD/MM/YYYY') : '—' }
 </script>
 
 <style scoped>
 .mb-4 { margin-bottom: 16px; }
-.font-medium { font-weight: 600; }
-.muted {
-  color: #94a3b8;
-  font-size: 12px;
-  margin-top: 2px;
-}
-.money {
-  font-weight: 700;
-  color: #cf1322;
-}
 </style>

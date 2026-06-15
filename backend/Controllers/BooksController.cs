@@ -25,6 +25,7 @@ public sealed class BooksController : ControllerBase
     }
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult> GetAllAsync(CancellationToken cancellationToken)
     {
         try
@@ -46,6 +47,7 @@ public sealed class BooksController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     public async Task<ActionResult> GetByIdAsync(int id, CancellationToken cancellationToken)
     {
         try
@@ -67,6 +69,7 @@ public sealed class BooksController : ControllerBase
     }
 
     [HttpGet("search")]
+    [AllowAnonymous]
     public async Task<ActionResult> SearchAsync([FromQuery] string? q, CancellationToken cancellationToken)
     {
         try
@@ -84,6 +87,7 @@ public sealed class BooksController : ControllerBase
     }
 
     [HttpGet("products")]
+    [AllowAnonymous]
     public async Task<ActionResult> GetProductsAsync(CancellationToken cancellationToken)
     {
         try
@@ -131,6 +135,7 @@ public sealed class BooksController : ControllerBase
     }
 
     [HttpGet("{id:int}/reviews")]
+    [AllowAnonymous]
     public async Task<ActionResult> GetReviewsAsync(int id, CancellationToken cancellationToken)
     {
         try

@@ -4,14 +4,6 @@
       <!-- Hero -->
       <div class="detail-hero" :style="heroBg">
         <div class="hero-overlay"></div>
-        <v-btn
-          class="detail-favorite"
-          :class="{ 'favorite-active': isFavorite }"
-          :icon="isFavorite ? 'mdi-heart' : 'mdi-heart-outline'"
-          variant="flat"
-          size="small"
-          @click="toggleFavorite"
-        />
         <div class="hero-content">
           <div class="hero-cover" :style="{ backgroundColor: titleColor(book.tenSach) }">
             <v-img v-if="book.imageUrl" :src="book.imageUrl" cover height="100%" />
@@ -20,7 +12,7 @@
           <div class="flex-grow-1">
             <div class="d-flex ga-2 mb-2">
               <v-chip size="small" :color="book.soBanConLai > 0 ? 'success' : 'error'" variant="flat">
-                {{ book.soBanConLai > 0 ? 'Có thể mượn' : 'Hết bản' }}
+                {{ book.soBanConLai > 0 ? `Còn ${book.soBanConLai} quyển` : 'Hết bản' }}
               </v-chip>
               <v-chip v-if="borrowCount" size="small" color="deep-orange" variant="flat">
                 <v-icon start size="12">mdi-fire</v-icon>{{ borrowCount }} lượt mượn
@@ -35,7 +27,7 @@
       </div>
 
       <!-- Body -->
-      <v-card-text class="pa-6" style="max-height:460px;overflow-y:auto">
+      <v-card-text class="pa-6" style="max-height:300px;overflow-y:auto">
         <v-alert v-if="errorMessage" type="error" variant="tonal" density="compact" class="mb-4">
           {{ errorMessage }}
         </v-alert>
@@ -50,38 +42,6 @@
         <p class="text-body-2 text-grey">
           {{ book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
         </p>
-        <div class="review-panel mt-5">
-          <div class="review-head">
-            <div>
-              <p class="panel-label mb-1">Đánh giá độc giả</p>
-              <div class="rating-line">
-                <v-rating :model-value="averageRating" density="compact" size="18" color="amber" half-increments readonly />
-                <span class="rating-score">{{ averageRating.toFixed(1) }}/5</span>
-                <span class="review-count">({{ reviewCount }} lượt)</span>
-              </div>
-            </div>
-            <v-btn-toggle v-model="reviewSort" density="compact" mandatory rounded="lg" variant="outlined" class="review-sort">
-              <v-btn size="x-small" value="desc">Cao nhất</v-btn>
-              <v-btn size="x-small" value="asc">Thấp nhất</v-btn>
-            </v-btn-toggle>
-          </div>
-
-          <v-progress-linear v-if="reviewsLoading" indeterminate color="primary" height="2" class="mt-3" />
-          <div v-else-if="sortedReviews.length" class="review-list">
-            <div v-for="review in sortedReviews" :key="review.id" class="review-item">
-              <div class="review-avatar">{{ review.initial }}</div>
-              <div class="review-content">
-                <div class="review-meta">
-                  <strong>{{ review.name }}</strong>
-                  <v-rating :model-value="review.rating" density="compact" size="14" color="amber" readonly />
-                </div>
-                <p v-if="review.comment" class="review-comment">{{ review.comment }}</p>
-                <p class="review-date">{{ review.createdAt }}</p>
-              </div>
-            </div>
-          </div>
-          <div v-else class="review-empty">Chưa có đánh giá cho cuốn sách này.</div>
-        </div>
         <div class="borrow-panel mt-5">
           <div>
             <p class="panel-label">Giá mượn</p>
@@ -97,17 +57,6 @@
             <p class="panel-value text-primary">{{ formatMoney(totalPrice) }}</p>
           </div>
         </div>
-        <v-text-field
-          v-model="returnAt"
-          type="datetime-local"
-          label="Ngày giờ trả sách"
-          prepend-inner-icon="mdi-calendar-clock"
-          density="comfortable"
-          variant="outlined"
-          :min="minReturnAt"
-          hide-details
-          class="mt-4"
-        />
       </v-card-text>
 
       <!-- Footer -->
@@ -132,25 +81,19 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { borrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
+import { borrowBook, getReaderCard } from '@/utils/api'
 import { titleColor, getGenreTags, formatMoney } from '@/utils/helpers'
-import { bookKey, loadFavoriteIds, toggleFavoriteBook } from '@/utils/favorites'
 
 const props = defineProps({
   modelValue: Boolean,
   book: Object,
   borrowCount: { type: Number, default: 0 }
 })
-const emit = defineEmits(['update:modelValue', 'borrowed', 'favorite-changed'])
+const emit = defineEmits(['update:modelValue', 'borrowed'])
 const store = useAppStore()
 const borrowing = ref(false)
 const errorMessage = ref('')
 const quantity = ref(1)
-const returnAt = ref(defaultReturnAt())
-const reviews = ref([])
-const reviewsLoading = ref(false)
-const reviewSort = ref('desc')
-const favoriteBooks = ref(loadFavoriteIds())
 
 const heroBg = computed(() => {
   if (props.book?.imageUrl) return { backgroundImage: `url(${props.book.imageUrl})` }
@@ -160,32 +103,10 @@ const genres = computed(() => getGenreTags(props.book?.tenSach))
 const maxQuantity = computed(() => Math.max(1, Math.min(Number(props.book?.soBanConLai || 1), 10)))
 const unitPrice = computed(() => getBorrowUnitPrice(props.book))
 const totalPrice = computed(() => unitPrice.value * quantity.value)
-const minReturnAt = computed(() => toDateTimeLocal(new Date(Date.now() + 60 * 60 * 1000)))
-const averageRating = computed(() => {
-  if (!reviews.value.length) return 0
-  return reviews.value.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviews.value.length
-})
-const reviewCount = computed(() => reviews.value.length)
-const sortedReviews = computed(() => [...reviews.value].sort((a, b) => {
-  const diff = reviewSort.value === 'asc' ? a.rating - b.rating : b.rating - a.rating
-  if (diff) return diff
-  return new Date(b.rawCreatedAt || 0) - new Date(a.rawCreatedAt || 0)
-}))
-const isFavorite = computed(() => {
-  const id = bookKey(props.book)
-  return !!id && favoriteBooks.value.has(id)
-})
 
 watch(() => props.book?.id, () => {
   quantity.value = 1
-  returnAt.value = defaultReturnAt()
   errorMessage.value = ''
-  reviews.value = []
-  if (props.modelValue) loadReviews()
-})
-
-watch(() => props.modelValue, open => {
-  if (open) loadReviews()
 })
 
 async function handleBorrow() {
@@ -204,10 +125,10 @@ async function handleBorrow() {
 
   borrowing.value = true
   try {
-    const response = await borrowBook(card, bookId, quantity.value, returnAt.value)
+    const response = await borrowBook(card, bookId, quantity.value)
     if (!response.ok) {
       const data = await response.json().catch(() => null)
-      errorMessage.value = borrowErrorMessage(data)
+      errorMessage.value = data?.message || data?.Message || 'Không mượn được sách. Vui lòng thử lại.'
       return
     }
     await store.loadAll()
@@ -222,64 +143,6 @@ async function handleBorrow() {
   } finally {
     borrowing.value = false
   }
-}
-
-async function loadReviews() {
-  const id = bookKey(props.book)
-  if (!id) return
-  reviewsLoading.value = true
-  try {
-    const data = await fetchBookReviews(id)
-    reviews.value = normalizeReviews(data, id)
-  } finally {
-    reviewsLoading.value = false
-  }
-}
-
-function normalizeReviews(data, bookId) {
-  const groups = Array.isArray(data) ? data : [data]
-  const group = groups.find(item => String(item?.bookId ?? item?.BookId ?? item?.id ?? '') === String(bookId)) || groups[0] || {}
-  const items = group.reviews || group.Reviews || (Array.isArray(data) ? [] : data?.items) || []
-  return items.map((review, index) => {
-    const card = review.CardNumber || review.cardNumber || ''
-    const name = review.FullName || review.fullName || review.UserName || review.userName || review.Username || review.username || card || 'Độc giả'
-    const created = review.CreatedAt || review.createdAt || ''
-    return {
-      id: review.ReviewId || review.reviewId || review.id || `${bookId}-${index}`,
-      name,
-      initial: String(name || 'Đ').trim().charAt(0).toUpperCase(),
-      rating: Number(review.Rating ?? review.rating ?? 0),
-      comment: review.Comment || review.comment || '',
-      rawCreatedAt: created,
-      createdAt: created ? new Date(created).toLocaleString('vi-VN') : ''
-    }
-  }).filter(review => review.rating > 0)
-}
-
-function borrowErrorMessage(data) {
-  const raw = String(data?.message || data?.Message || '')
-  if (raw.includes('Borrow limit exceeded') || raw.includes('Monthly borrow limit exceeded')) {
-    const limit = data?.monthlyBorrowLimit ?? data?.MonthlyBorrowLimit ?? 5
-    const active = data?.activeBorrowCount ?? data?.ActiveBorrowCount
-    const activeText = Number.isFinite(Number(active)) ? ` Hiện bạn đang giữ ${active} cuốn.` : ''
-    return `Bạn đã đạt giới hạn mượn. Mỗi độc giả chỉ được giữ tối đa ${limit} cuốn đang mượn hoặc chờ xử lý. Sách đã trả sẽ không tính vào giới hạn.${activeText}`
-  }
-  return raw || 'Không mượn được sách. Vui lòng thử lại.'
-}
-
-function toggleFavorite() {
-  favoriteBooks.value = toggleFavoriteBook(props.book, favoriteBooks.value).ids
-  emit('favorite-changed')
-}
-
-function defaultReturnAt() {
-  return toDateTimeLocal(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000))
-}
-
-function toDateTimeLocal(date) {
-  const local = new Date(date)
-  local.setMinutes(local.getMinutes() - local.getTimezoneOffset())
-  return local.toISOString().slice(0, 16)
 }
 
 function getBorrowUnitPrice(book = {}) {
@@ -337,19 +200,6 @@ function getBorrowUnitPrice(book = {}) {
   align-items: center;
   justify-content: center;
 }
-.detail-favorite {
-  position: absolute !important;
-  top: 16px;
-  right: 16px;
-  z-index: 20;
-  background: rgba(255,255,255,0.9) !important;
-  color: #64748b !important;
-  box-shadow: 0 8px 22px rgba(0,0,0,0.22) !important;
-  backdrop-filter: blur(10px);
-}
-.detail-favorite.favorite-active {
-  color: #ec4899 !important;
-}
 .text-white-70 { color: rgba(255,255,255,0.7) !important; }
 .text-white-50 { color: rgba(255,255,255,0.5) !important; }
 .border-t { border-top: 1px solid #f0e8de; }
@@ -362,91 +212,6 @@ function getBorrowUnitPrice(book = {}) {
   border: 1px solid #f0e8de;
   border-radius: 14px;
   background: #fffaf4;
-}
-.review-panel {
-  padding: 14px;
-  border: 1px solid #e7ece8;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
-}
-.review-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.rating-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.rating-score {
-  font-weight: 800;
-  color: #0f172a;
-  font-size: 13px;
-}
-.review-count {
-  color: #94a3b8;
-  font-size: 12px;
-}
-.review-sort {
-  flex-shrink: 0;
-}
-.review-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 12px;
-}
-.review-item {
-  display: flex;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 12px;
-  background: #fff;
-  border: 1px solid #eef2f7;
-}
-.review-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  background: #ecfdf5;
-  color: #047857;
-  font-weight: 900;
-}
-.review-content {
-  min-width: 0;
-  flex: 1;
-}
-.review-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
-  font-size: 13px;
-}
-.review-comment {
-  margin: 4px 0 0;
-  color: #475569;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.review-date {
-  margin: 4px 0 0;
-  color: #94a3b8;
-  font-size: 11px;
-}
-.review-empty {
-  margin-top: 12px;
-  padding: 14px;
-  text-align: center;
-  border: 1px dashed #dbe5dd;
-  border-radius: 12px;
-  color: #94a3b8;
-  font-size: 13px;
 }
 .panel-label {
   font-size: 11px;

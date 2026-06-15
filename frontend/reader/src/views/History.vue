@@ -1,71 +1,60 @@
 <template>
-  <div>
+  <div class="history-page">
     <div class="mb-6">
       <h2 class="text-h5 font-weight-black">Lịch sử mượn trả</h2>
-      <p class="text-body-2 text-grey">Toàn bộ yêu cầu mượn, trả và trạng thái xử lý sách.</p>
+      <p class="text-body-2 text-grey">Toàn bộ giao dịch và thông báo liên quan đến tài khoản của bạn</p>
     </div>
 
     <v-row class="mb-6">
-      <v-col cols="12" md="3" sm="6">
+      <v-col cols="12" md="4">
         <v-card rounded="xl" class="pa-4" elevation="1">
-          <div class="d-flex align-center ga-4">
-            <v-avatar size="44" color="primary" variant="tonal">
-              <v-icon>mdi-book</v-icon>
-            </v-avatar>
-            <div>
-              <p class="text-caption text-grey font-weight-bold">Tổng phiếu</p>
-              <p class="text-h5 font-weight-black">{{ store.myTransactions.length }}</p>
-            </div>
-          </div>
+          <p class="text-caption text-grey font-weight-bold">Tổng giao dịch</p>
+          <p class="text-h5 font-weight-black">{{ store.myTransactions.length }}</p>
         </v-card>
       </v-col>
-      <v-col cols="12" md="3" sm="6">
+      <v-col cols="12" md="4">
         <v-card rounded="xl" class="pa-4" elevation="1">
-          <div class="d-flex align-center ga-4">
-            <v-avatar size="44" color="warning" variant="tonal">
-              <v-icon>mdi-clock-outline</v-icon>
-            </v-avatar>
-            <div>
-              <p class="text-caption text-grey font-weight-bold">Chờ duyệt</p>
-              <p class="text-h5 font-weight-black text-warning">{{ store.pendingTransactions.length }}</p>
-            </div>
-          </div>
+          <p class="text-caption text-grey font-weight-bold">Thông báo mới</p>
+          <p class="text-h5 font-weight-black text-primary">{{ notifications.length }}</p>
         </v-card>
       </v-col>
-      <v-col cols="12" md="3" sm="6">
+      <v-col cols="12" md="4">
         <v-card rounded="xl" class="pa-4" elevation="1">
-          <div class="d-flex align-center ga-4">
-            <v-avatar size="44" color="success" variant="tonal">
-              <v-icon>mdi-check-circle</v-icon>
-            </v-avatar>
-            <div>
-              <p class="text-caption text-grey font-weight-bold">Đã trả đúng hạn</p>
-              <p class="text-h5 font-weight-black text-success">{{ onTimeCount }}</p>
-            </div>
-          </div>
-        </v-card>
-      </v-col>
-      <v-col cols="12" md="3" sm="6">
-        <v-card rounded="xl" class="pa-4" elevation="1">
-          <div class="d-flex align-center ga-4">
-            <v-avatar size="44" color="error" variant="tonal">
-              <v-icon>mdi-alert</v-icon>
-            </v-avatar>
-            <div>
-              <p class="text-caption text-grey font-weight-bold">Quá hạn</p>
-              <p class="text-h5 font-weight-black text-error">{{ store.overdueTransactions.length }}</p>
-            </div>
-          </div>
+          <p class="text-caption text-grey font-weight-bold">Từ chối gần nhất</p>
+          <p class="text-h5 font-weight-black text-error">{{ latestRejectLabel }}</p>
         </v-card>
       </v-col>
     </v-row>
 
+    <v-card rounded="xl" elevation="1" class="mb-5">
+      <v-card-title class="d-flex align-center justify-space-between">
+        <span class="font-weight-bold">Thông báo hệ thống</span>
+        <v-chip size="small" variant="tonal">{{ notifications.length }} mục</v-chip>
+      </v-card-title>
+      <v-card-text>
+        <v-alert
+          v-for="item in notifications"
+          :key="item.id"
+          :type="item.type"
+          variant="tonal"
+          class="mb-3"
+          border="start"
+        >
+          <div class="font-weight-bold">{{ item.title }}</div>
+          <div class="text-body-2">{{ item.message }}</div>
+          <div class="text-caption text-grey mt-1">{{ formatDate(item.createdAt) }}</div>
+        </v-alert>
+        <v-alert v-if="!notifications.length" type="info" variant="tonal">
+          Chưa có thông báo nào.
+        </v-alert>
+      </v-card-text>
+    </v-card>
+
     <v-card rounded="xl" elevation="1">
       <v-card-title class="d-flex align-center justify-space-between">
-        <span class="font-weight-bold">Danh sách chi tiết</span>
+        <span class="font-weight-bold">Lịch sử giao dịch</span>
         <v-chip size="small" variant="tonal">{{ store.myTransactions.length }} phiếu mượn</v-chip>
       </v-card-title>
-
       <v-data-table
         :headers="headers"
         :items="store.myTransactions"
@@ -75,7 +64,7 @@
       >
         <template #item.book="{ item }">
           <div class="d-flex align-center ga-3 py-2">
-            <v-avatar size="40" :color="titleColor(item.TenSach || item.tenSach)" variant="flat" rounded="lg">
+            <v-avatar size="40" :color="titleColor(item.TenSach || item.tenSach)" rounded="lg">
               <v-icon color="white" size="20">mdi-book-open-variant</v-icon>
             </v-avatar>
             <div>
@@ -84,22 +73,9 @@
             </div>
           </div>
         </template>
-
-        <template #item.BorrowedAt="{ item }">
-          <div>{{ formatDateTime(item.BorrowedAt || item.borrowedAt) }}</div>
-          <div class="history-note">{{ borrowTimeLabel(item) }}</div>
-        </template>
-
-        <template #item.DueAt="{ item }">
-          <div>{{ formatDateTime(item.DueAt || item.dueAt) }}</div>
-          <div class="history-note">{{ dueTimeLabel(item) }}</div>
-        </template>
-
-        <template #item.ReturnedAt="{ item }">
-          <div>{{ returnedAtOf(item) ? formatDateTime(returnedAtOf(item)) : '—' }}</div>
-          <div class="history-note">{{ returnTimeLabel(item) }}</div>
-        </template>
-
+        <template #item.BorrowedAt="{ item }">{{ formatDate(item.BorrowedAt) }}</template>
+        <template #item.DueAt="{ item }">{{ formatDate(item.DueAt) }}</template>
+        <template #item.ReturnedAt="{ item }">{{ item.ReturnedAt ? formatDate(item.ReturnedAt) : '—' }}</template>
         <template #item.Status="{ item }">
           <v-chip size="small" :color="getStatusColor(item)" variant="flat">
             {{ getStatusLabel(item) }}
@@ -111,93 +87,73 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { titleColor, formatDateTime, durationSince, timeUntil } from '@/utils/helpers'
+import { titleColor, formatDate } from '@/utils/helpers'
 
 const store = useAppStore()
 const loading = ref(false)
-const now = ref(Date.now())
-let clockTimer = null
 
 const headers = [
   { title: 'Tên sách', key: 'book', sortable: false, width: '280px' },
-  { title: 'Thời điểm mượn', key: 'BorrowedAt', width: '180px' },
-  { title: 'Hạn trả', key: 'DueAt', width: '180px' },
-  { title: 'Thời điểm trả', key: 'ReturnedAt', width: '180px' },
-  { title: 'Trạng thái', key: 'Status', width: '150px' }
+  { title: 'Ngày mượn', key: 'BorrowedAt', width: '120px' },
+  { title: 'Hạn trả', key: 'DueAt', width: '120px' },
+  { title: 'Ngày trả', key: 'ReturnedAt', width: '120px' },
+  { title: 'Trạng thái', key: 'Status', width: '120px' }
 ]
 
-const onTimeCount = computed(() =>
-  store.myTransactions.filter(t => {
-    const returnedAt = returnedAtOf(t)
-    const dueAt = t.DueAt || t.dueAt
-    return store.isReturned(t) && returnedAt && dueAt && new Date(returnedAt) <= new Date(dueAt)
-  }).length
-)
+const notifications = computed(() => {
+  return (store.events || [])
+    .map(e => {
+      const payload = e.payload || {}
+      const eventType = String(e.eventType || '').toLowerCase()
+      const title = payload.Title || payload.title || eventType || 'Thông báo'
+      const message = payload.Message || payload.message || ''
+      const createdAt = payload.CreatedAt || payload.createdAt || e.publishedAt
+      const isReject = eventType.includes('rejected')
+      const isRenew = eventType.includes('renewed')
+      const isReturn = eventType.includes('returned')
+      return {
+        id: e.id,
+        title,
+        message,
+        createdAt,
+        type: isReject ? 'error' : isRenew ? 'warning' : isReturn ? 'success' : 'info'
+      }
+    })
+    .filter(x => x.message || x.title)
+    .slice(0, 20)
+})
 
-function returnedAtOf(tx) {
-  return tx.ReturnedAt || tx.returnedAt || null
-}
-
-function borrowTimeLabel(tx) {
-  now.value
-  if (store.isPending(tx)) return 'Yêu cầu đang chờ duyệt'
-  if (store.isReturned(tx) && returnedAtOf(tx)) return `Đã mượn: ${durationSince(tx.BorrowedAt || tx.borrowedAt, new Date(returnedAtOf(tx)).getTime())}`
-  if (store.isReturnPending(tx)) return `Đã mượn: ${durationSince(tx.BorrowedAt || tx.borrowedAt)}`
-  if (store.isBorrowed(tx) || store.isOverdue(tx)) return `Đã mượn: ${durationSince(tx.BorrowedAt || tx.borrowedAt)}`
-  return '—'
-}
-
-function dueTimeLabel(tx) {
-  now.value
-  if (store.isPending(tx)) return 'Chưa bắt đầu tính hạn'
-  if (store.isReturned(tx)) return 'Đã hoàn tất'
-  if (store.isReturnPending(tx)) return 'Đang chờ thủ thư kiểm tra trả'
-  return `Còn lại: ${timeUntil(tx.DueAt || tx.dueAt)}`
-}
-
-function returnTimeLabel(tx) {
-  if (store.isReturnPending(tx)) return 'Đã gửi yêu cầu trả, chờ xác nhận'
-  if (store.isReturned(tx)) return 'Thủ thư đã xác nhận trả'
-  if (store.isPending(tx)) return 'Chưa được duyệt mượn'
-  return 'Chưa trả'
-}
+const latestRejectLabel = computed(() => {
+  const item = notifications.value.find(n => n.type === 'error')
+  return item ? 'Có' : 'Không'
+})
 
 function getStatusColor(tx) {
-  if (store.isPending(tx)) return 'warning'
-  if (store.isReturnPending(tx)) return 'deep-purple'
   if (store.isOverdue(tx)) return 'error'
   if (store.isReturned(tx)) return 'success'
+  const status = store.statusOf(tx)
+  if (status === 'Overdue') return 'error'
+  if (status === 'Returned') return 'success'
   return 'info'
 }
 
 function getStatusLabel(tx) {
-  if (store.isPending(tx)) return 'Chờ duyệt mượn'
-  if (store.isReturnPending(tx)) return 'Chờ kiểm tra trả'
   if (store.isOverdue(tx)) return 'Quá hạn'
   if (store.isReturned(tx)) return 'Đã trả'
+  const status = store.statusOf(tx)
+  if (status === 'Overdue') return 'Quá hạn'
+  if (status === 'Returned') return 'Đã trả'
+  if (status === 'ReturnPending') return 'Chờ trả'
+  if (status === 'Pending') return 'Chờ duyệt'
   return 'Đang mượn'
 }
 
 onMounted(async () => {
-  clockTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
   loading.value = true
-  await store.loadBooks()
-  await store.loadMyTransactions()
+  await store.loadAll()
   loading.value = false
-})
-
-onBeforeUnmount(() => {
-  if (clockTimer) window.clearInterval(clockTimer)
 })
 </script>
 
-<style scoped>
-.history-note {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #8a98b5;
-  line-height: 1.35;
-}
-</style>
