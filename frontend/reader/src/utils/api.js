@@ -3,6 +3,7 @@ const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, '')}/login`
 const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
+const GATEWAY_CATALOG_BOOKS = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 let authBootstrapComplete = false
 
@@ -253,8 +254,8 @@ async function fetchJsonFromCandidates(paths = []) {
 export async function fetchBooks() {
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin}/api/catalog/books`,
       `${window.location.origin}/api/books`,
+      GATEWAY_CATALOG_BOOKS,
       `${BASE}/books`
     ])
     return Array.isArray(data) ? data.map(normalizeBook) : []

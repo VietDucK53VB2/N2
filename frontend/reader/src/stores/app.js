@@ -35,6 +35,20 @@ export const useAppStore = defineStore('app', () => {
   const userInfo = ref(getCachedUserInfo())
   const loading = ref(false)
 
+  function currentRole() {
+    return String(
+      userInfo.value?.role ||
+      getCachedUserInfo().role ||
+      localStorage.getItem('role') ||
+      ''
+    ).trim().toLowerCase()
+  }
+
+  function isStaffRole() {
+    const role = currentRole()
+    return role === 'librarian' || role === 'admin'
+  }
+
   function statusOf(transaction = {}) {
     return String(transaction.Status || transaction.status || '').trim()
   }
@@ -174,10 +188,19 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function loadAllTransactions() {
+    if (!isStaffRole()) {
+      allTransactions.value = []
+      return []
+    }
     allTransactions.value = await fetchAllTransactions()
+    return allTransactions.value
   }
 
   async function loadEvents() {
+    if (!isStaffRole()) {
+      events.value = []
+      return []
+    }
     const card = getReaderCard()
     const payloads = await fetchEvents()
     const parsed = payloads
@@ -195,10 +218,16 @@ export const useAppStore = defineStore('app', () => {
         return !card || !cardNumber || String(cardNumber) === String(card)
       })
     events.value = parsed
+    return parsed
   }
 
   async function loadFines() {
+    if (!isStaffRole()) {
+      fines.value = []
+      return []
+    }
     fines.value = await fetchFines()
+    return fines.value
   }
 
   async function loadUserInfo() {
@@ -216,12 +245,18 @@ export const useAppStore = defineStore('app', () => {
     loading.value = true
     try {
       await loadBooks()
-      await Promise.all([
-        loadMyTransactions(),
-        loadAllTransactions()
-      ])
-      events.value = []
-      fines.value = []
+      await loadMyTransactions()
+      if (isStaffRole()) {
+        await Promise.all([
+          loadAllTransactions(),
+          loadEvents(),
+          loadFines()
+        ])
+      } else {
+        allTransactions.value = []
+        events.value = []
+        fines.value = []
+      }
     } finally {
       loading.value = false
     }
