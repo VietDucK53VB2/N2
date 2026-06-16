@@ -31,6 +31,44 @@ export function parseJwt(token) {
   } catch { return null }
 }
 
+function extractRoleFromPayload(payload = {}) {
+  const role =
+    payload.role ||
+    payload.Role ||
+    payload.roles?.[0] ||
+    payload.Roles?.[0] ||
+    payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role'] ||
+    ''
+  return Array.isArray(role) ? role[0] || '' : String(role || '')
+}
+
+function saveAuthSession(token, cardNumber = '') {
+  if (!token) return false
+  const payload = parseJwt(token) || {}
+  const role = extractRoleFromPayload(payload)
+  const username =
+    payload.username ||
+    payload.Username ||
+    payload.preferred_username ||
+    payload.name ||
+    payload.unique_name ||
+    ''
+
+  localStorage.setItem('authToken', token)
+  localStorage.setItem('token', token)
+  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  if (role) localStorage.setItem('role', role)
+  const cached = getCachedUserInfo()
+  localStorage.setItem('userInfo', JSON.stringify({
+    ...cached,
+    username: cached.username || username,
+    role: cached.role || role,
+    cardNumber: cached.cardNumber || cardNumber || '',
+  }))
+  return true
+}
+
 export function getTokenPayload() {
   const t = getToken()
   return t ? parseJwt(t) : null
@@ -41,18 +79,11 @@ export function forceLogin() {
   window.location.href = N3_LOGIN_URL
 }
 
-function storeAuthToken(token, cardNumber = '') {
-  if (!token) return false
-  localStorage.setItem('authToken', token)
-  localStorage.setItem('token', token)
-  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
-  return true
-}
-
 export function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
   localStorage.removeItem('readerCard')
+  localStorage.removeItem('role')
   localStorage.removeItem('userInfo')
 }
 
@@ -108,7 +139,7 @@ async function redeemCode(code) {
     payload?.user?.CardNumber ||
     ''
 
-  return storeAuthToken(token, cardNumber)
+  return saveAuthSession(token, cardNumber)
 }
 
 async function authFetchWithFallback(path, opts = {}) {
@@ -279,7 +310,7 @@ export async function initAuth() {
     const c = p.get('cardNumber')
 
     if (t) {
-      storeAuthToken(t, c || '')
+      saveAuthSession(t, c || '')
       window.history.replaceState({}, '', window.location.pathname + window.location.hash)
       return true
     }
