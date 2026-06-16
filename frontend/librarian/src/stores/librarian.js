@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-const CIRC_API = 'http://163.223.210.87:5000/api/circulation'
-const N3_LOGIN_URL = 'http://163.223.210.87:80/login'
+const CIRC_API = `${window.location.origin}/api/circulation`
+const N3_LOGIN_URL = `${window.location.origin}/login`
 
 function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')

@@ -1,13 +1,10 @@
-<template>
+﻿<template>
   <div>
     <div class="d-flex align-center justify-space-between mb-6">
       <div>
         <h2 class="text-h5 font-weight-black">Sách của tôi</h2>
         <p class="text-body-2 text-grey">Quản lý yêu cầu mượn, sách đang mượn và trả sách</p>
       </div>
-      <v-btn class="btn-gradient" size="large" prepend-icon="mdi-plus" @click="borrowDialog = true">
-        Mượn sách mới
-      </v-btn>
     </div>
 
     <v-chip-group v-model="filter" mandatory selected-class="text-white bg-primary" class="mb-6">
@@ -90,12 +87,11 @@
     <v-card v-else flat color="transparent" class="text-center pa-12">
       <v-icon size="72" color="grey-lighten-2" class="mb-4">mdi-book-open-variant</v-icon>
       <p class="text-body-1 text-grey mb-4">Không có sách nào</p>
-      <v-btn class="btn-gradient" prepend-icon="mdi-plus" @click="borrowDialog = true">Mượn sách mới</v-btn>
     </v-card>
 
     <v-dialog v-model="returnDialog" max-width="440">
       <v-card rounded="xl">
-        <v-card-title class="text-h6 font-weight-bold">Gửi yêu cầu trả sách</v-card-title>
+          <v-card-title class="text-h6 font-weight-bold">Gửi yêu cầu trả sách</v-card-title>
         <v-card-text>
           <v-alert v-if="returnError" type="error" variant="tonal" density="compact" class="mb-3">
             {{ returnError }}
@@ -139,8 +135,6 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
-
-    <BorrowDialog v-model="borrowDialog" @success="handleBorrowSuccess" />
     <v-snackbar v-model="snackbar" :color="snackbarColor" timeout="3000" location="bottom right">
       {{ snackbarText }}
     </v-snackbar>
@@ -158,14 +152,12 @@ import {
   fetchBookReviews
 } from '@/utils/api'
 import { titleColor, formatDate, daysLeft } from '@/utils/helpers'
-import BorrowDialog from '@/components/BorrowDialog.vue'
 
 const store = useAppStore()
 const filter = ref('all')
 const returnDialog = ref(false)
 const returnBookData = ref(null)
 const returning = ref(false)
-const borrowDialog = ref(false)
 const returnError = ref('')
 const snackbar = ref(false)
 const snackbarText = ref('')
@@ -325,12 +317,6 @@ async function submitReview() {
   }
 }
 
-async function handleBorrowSuccess() {
-  snackbarText.value = 'Đã gửi yêu cầu mượn sách. Vui lòng chờ thủ thư duyệt.'
-  snackbarColor.value = 'success'
-  snackbar.value = true
-  await loadData()
-}
 
 async function loadData() {
   await store.loadMyTransactions()
@@ -421,3 +407,4 @@ onMounted(loadData)
   color: rgba(255,255,255,0.6) !important;
 }
 </style>
+

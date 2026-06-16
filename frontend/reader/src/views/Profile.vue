@@ -11,9 +11,14 @@
         <!-- Profile Card -->
         <v-card rounded="xl" elevation="1" class="overflow-hidden mb-5">
           <div class="profile-cover">
-            <v-avatar size="96" class="profile-avatar">
-              {{ initials }}
+            <v-avatar size="96" class="profile-avatar" :image="avatarUrl || undefined">
+              <span v-if="!avatarUrl">{{ initials }}</span>
             </v-avatar>
+            <button class="avatar-upload-btn" type="button" @click="pickAvatar">
+              <v-icon size="18">mdi-camera</v-icon>
+              Đổi ảnh
+            </button>
+            <input ref="avatarInput" class="d-none" type="file" accept="image/*" @change="onAvatarPicked" />
           </div>
           <v-card-text class="pt-14 px-7 pb-6">
             <div class="d-flex align-center justify-space-between mb-5">
@@ -33,12 +38,6 @@
                     {{ userInfo.cardNumber || '—' }}
                     <v-icon size="14" class="ml-1 cursor-pointer" @click="copyCard">mdi-content-copy</v-icon>
                   </span>
-                </div>
-              </v-col>
-              <v-col cols="6" md="3">
-                <div class="info-box">
-                  <span class="info-label">MÃ THẺ TV</span>
-                  <span class="info-value text-primary font-weight-bold">{{ userInfo.cardNumber || '—' }}</span>
                 </div>
               </v-col>
               <v-col cols="6" md="3">
@@ -110,14 +109,6 @@
           </v-card-text>
         </v-card>
 
-        <!-- Upgrade -->
-        <v-card rounded="xl" class="upgrade-card pa-5">
-          <p class="text-overline" style="color:rgba(255,255,255,0.6)">NÂNG CẤP TÀI KHOẢN</p>
-          <h4 class="text-subtitle-1 font-weight-bold text-white mb-4">Thư viện số Premium</h4>
-          <v-btn variant="outlined" color="white" size="small" append-icon="mdi-arrow-right">
-            Khám phá ngay
-          </v-btn>
-        </v-card>
       </v-col>
     </v-row>
 
@@ -128,7 +119,6 @@
         <v-card-text>
           <v-text-field v-model="editForm.fullName" label="Họ và tên" class="mb-3" />
           <v-text-field v-model="editForm.email" label="Email" class="mb-3" />
-          <v-text-field v-model="editForm.cardNumber" label="Mã thẻ thư viện" />
         </v-card-text>
         <v-card-actions class="pa-4">
           <v-spacer />
@@ -156,9 +146,11 @@ const paying = ref(false)
 const snackbar = ref(false)
 const snackbarText = ref('')
 const snackbarColor = ref('success')
+const avatarInput = ref(null)
 
 const userInfo = computed(() => store.userInfo || {})
 const initials = computed(() => getInitials(userInfo.value.fullName))
+const avatarUrl = computed(() => userInfo.value.avatarUrl || userInfo.value.AvatarUrl || userInfo.value.avatar || userInfo.value.Avatar || '')
 const roleName = computed(() => {
   const role = userInfo.value.role
   if (role === 'Admin') return 'Quản trị viên'
@@ -181,7 +173,7 @@ const stats = computed(() => [
   { label: 'Quá hạn', value: store.overdueTransactions.length, color: 'text-error' }
 ])
 
-const editForm = reactive({ fullName: '', email: '', cardNumber: '' })
+const editForm = reactive({ fullName: '', email: '' })
 
 function showMessage(text, color = 'success') {
   snackbarText.value = text
@@ -192,19 +184,37 @@ function showMessage(text, color = 'success') {
 function openEditDialog() {
   editForm.fullName = userInfo.value.fullName || ''
   editForm.email = userInfo.value.email || ''
-  editForm.cardNumber = userInfo.value.cardNumber || ''
   editDialog.value = true
+}
+
+function pickAvatar() {
+  avatarInput.value?.click()
+}
+
+function onAvatarPicked(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    const next = {
+      ...userInfo.value,
+      avatarUrl: String(reader.result || ''),
+      AvatarUrl: String(reader.result || '')
+    }
+    localStorage.setItem('userInfo', JSON.stringify(next))
+    store.userInfo = next
+    showMessage('Đã cập nhật ảnh đại diện.')
+  }
+  reader.readAsDataURL(file)
 }
 
 function saveProfile() {
   const next = {
     ...userInfo.value,
     fullName: editForm.fullName?.trim() || userInfo.value.fullName || '',
-    email: editForm.email?.trim() || userInfo.value.email || '',
-    cardNumber: editForm.cardNumber?.trim() || userInfo.value.cardNumber || ''
+    email: editForm.email?.trim() || userInfo.value.email || ''
   }
   localStorage.setItem('userInfo', JSON.stringify(next))
-  if (next.cardNumber) localStorage.setItem('readerCard', next.cardNumber)
   store.userInfo = next
   editDialog.value = false
   showMessage('Đã lưu thông tin hồ sơ.')
@@ -241,9 +251,25 @@ function copyCard() {
 </script>
 
 <style scoped lang="scss">
+.page-title {
+  color: #0f172a;
+}
+
+.page-subtitle {
+  color: #64748b;
+}
+
+.profile-card,
+.stats-card,
+.fines-card,
+.edit-card {
+  border: 1px solid #e5eef5;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06) !important;
+}
+
 .profile-cover {
   height: 140px;
-  background: linear-gradient(135deg, #e8855a, #7c5cbf);
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 100%);
   position: relative;
 }
 .profile-avatar {
@@ -251,22 +277,40 @@ function copyCard() {
   bottom: -48px;
   left: 28px;
   border: 4px solid white;
-  background: linear-gradient(135deg, #e8855a, #7c5cbf);
+  background: linear-gradient(135deg, #0f766e, #047857);
   color: white;
   font-size: 28px;
   font-weight: 800;
   box-shadow: 0 8px 24px rgba(0,0,0,0.2);
 }
+.avatar-upload-btn {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #065f46;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  cursor: pointer;
+}
+.avatar-upload-btn:hover { background: #fff; }
 .info-box {
-  background: #faf7f2;
+  background: #f0fdf4;
   border-radius: 12px;
   padding: 12px;
+  border: 1px solid #d1fae5;
 }
 .info-label {
   display: block;
   font-size: 10px;
   font-weight: 700;
-  color: #bbb;
+  color: #64748b;
   letter-spacing: 0;
   margin-bottom: 4px;
   text-transform: none;
@@ -279,11 +323,11 @@ function copyCard() {
 .fines-total {
   text-align: center;
   padding: 20px;
-  background: #fde8dc;
+  background: linear-gradient(135deg, rgba(6, 95, 70, 0.08), rgba(4, 120, 87, 0.12));
   border-radius: 14px;
-  border: 1px solid #f5c0a0;
+  border: 1px solid rgba(4, 120, 87, 0.18);
 }
 .upgrade-card {
-  background: linear-gradient(135deg, #e8855a, #7c5cbf) !important;
+  background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 100%) !important;
 }
 </style>
