@@ -8,5 +8,12 @@
 import { onMounted } from 'vue'
 import { useLibrarianStore } from './stores/librarian'
 const store = useLibrarianStore()
-onMounted(() => store.loadAll())
+
+function hasToken() {
+  return Boolean(localStorage.getItem('authToken') || localStorage.getItem('token'))
+}
+
+onMounted(() => {
+  if (hasToken()) store.loadAll()
+})
 </script>

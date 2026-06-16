@@ -59,7 +59,6 @@ function bookIdOf(transaction = {}) {
 async function apiFetch(url, opts = {}) {
   const t = getToken()
   const response = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(opts.headers || {}) } })
-  if (response.status === 401 || response.status === 403) forceLogin()
   return response
 }
 
