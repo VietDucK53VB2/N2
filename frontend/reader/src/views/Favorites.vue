@@ -54,6 +54,7 @@ function toggleFavorite(book) {
 
 onMounted(async () => {
   await store.loadBooks()
+  await store.loadFavoritesFromServer()
 })
 </script>
 

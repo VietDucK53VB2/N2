@@ -20,6 +20,8 @@ public sealed class CirculationDbContext : DbContext
 
     public DbSet<Book> Books => Set<Book>();
 
+    public DbSet<ReaderFavorite> ReaderFavorites => Set<ReaderFavorite>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<BorrowTransaction>(entity =>
@@ -77,6 +79,26 @@ public sealed class CirculationDbContext : DbContext
             entity.Property(item => item.TacGia).HasMaxLength(128);
             entity.Property(item => item.NhaSanXuat).HasMaxLength(128);
             entity.Property(item => item.SoLuong);
+        });
+
+        modelBuilder.Entity<ReaderFavorite>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.UserKey).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.UserId).HasMaxLength(64);
+            entity.Property(item => item.CardNumber).HasMaxLength(32);
+            entity.Property(item => item.Username).HasMaxLength(64);
+            entity.Property(item => item.BookId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.TenSach).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.TacGia).HasMaxLength(128);
+            entity.Property(item => item.ImageUrl).HasMaxLength(512);
+            entity.Property(item => item.TheLoai).HasMaxLength(128);
+            entity.Property(item => item.SoBanConLai);
+            entity.Property(item => item.CreatedAt);
+            entity.Property(item => item.UpdatedAt);
+            entity.HasIndex(item => new { item.UserKey, item.BookId }).IsUnique();
+            entity.HasIndex(item => item.UserKey);
+            entity.HasIndex(item => item.BookId);
         });
 
         base.OnModelCreating(modelBuilder);

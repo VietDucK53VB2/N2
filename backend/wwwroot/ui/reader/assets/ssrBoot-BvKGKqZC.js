@@ -1,1 +1,0 @@
-import{o as s,ap as t,s as e,A as n}from"./index-BWA_JcvN.js";function i(){const o=e(!1);return s(()=>{window.requestAnimationFrame(()=>{o.value=!0})}),{ssrBootStyles:n(()=>o.value?void 0:{transition:"none !important"}),isBooted:t(o)}}export{i as u};

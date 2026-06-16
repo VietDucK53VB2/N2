@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   fetchBooks, fetchTransactions, fetchAllTransactions,
-  fetchEvents, fetchFines, getReaderCard, getCachedUserInfo,
+  fetchEvents, fetchFines, fetchFavorites, saveFavoriteBook, removeFavoriteBook,
+  getReaderCard, getCachedUserInfo,
   loadUserProfile as loadProfile, normalizeEvent
 } from '@/utils/api'
 
@@ -94,26 +95,68 @@ export const useAppStore = defineStore('app', () => {
     return favoriteIds().has(String(bookId))
   }
 
-  function toggleFavorite(book) {
+  async function loadFavoritesFromServer(info = userInfo.value) {
+    const remote = await fetchFavorites()
+    if (Array.isArray(remote)) {
+      const normalized = remote.map(normalizeFavoriteBook)
+      favorites.value = normalized
+      persistFavorites(normalized, info)
+      return normalized
+    }
+
+    const local = loadFavoritesForUser(info)
+    favorites.value = local
+    return local
+  }
+
+  async function toggleFavorite(book) {
     if (!book?.id) return false
     const id = String(book.id)
     const list = Array.isArray(favorites.value) ? [...favorites.value] : []
     const idx = list.findIndex(item => String(item.id) === id)
+    const nextList = idx >= 0
+      ? list.filter(item => String(item.id) !== id)
+      : [normalizeFavoriteBook(book), ...list]
+
+    const previousList = favorites.value
+    favorites.value = nextList
+    persistFavorites(nextList)
+
     if (idx >= 0) {
-      list.splice(idx, 1)
-    } else {
-      list.unshift(normalizeFavoriteBook(book))
+      const ok = await removeFavoriteBook(id)
+      if (!ok) {
+        favorites.value = previousList
+        persistFavorites(previousList)
+        return false
+      }
+      return true
     }
-    favorites.value = list
-    persistFavorites(list)
+
+    const normalizedBook = normalizeFavoriteBook(book)
+    const saved = await saveFavoriteBook(normalizedBook)
+    if (!saved) {
+      favorites.value = previousList
+      persistFavorites(previousList)
+      return false
+    }
+    favorites.value = [normalizeFavoriteBook(saved), ...list]
+    persistFavorites(favorites.value)
     return true
   }
 
-  function removeFavorite(bookId) {
+  async function removeFavorite(bookId) {
     const id = String(bookId)
-    const list = (favorites.value || []).filter(item => String(item.id) !== id)
+    const previousList = Array.isArray(favorites.value) ? [...favorites.value] : []
+    const list = previousList.filter(item => String(item.id) !== id)
     favorites.value = list
     persistFavorites(list)
+    const ok = await removeFavoriteBook(id)
+    if (!ok) {
+      favorites.value = previousList
+      persistFavorites(previousList)
+      return false
+    }
+    return true
   }
 
   function currentRole() {
@@ -365,6 +408,7 @@ export const useAppStore = defineStore('app', () => {
       avatarUrl: info?.avatarUrl || info?.AvatarUrl || cached?.avatarUrl || cached?.AvatarUrl || cached?.avatar || cached?.Avatar || ''
     }
     favorites.value = loadFavoritesForUser(userInfo.value)
+    await loadFavoritesFromServer(userInfo.value)
     return info
   }
 
@@ -399,6 +443,7 @@ export const useAppStore = defineStore('app', () => {
     loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     addToCart, removeFromCart, clearCart,
     isFavorite, toggleFavorite, removeFavorite,
+    loadFavoritesFromServer,
     loadUserInfo, loadAll
   }
 })

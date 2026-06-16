@@ -297,6 +297,42 @@ export async function fetchFines() {
   } catch { return [] }
 }
 
+export async function fetchFavorites() {
+  try {
+    const r = await authFetchWithFallback('/favorites', { redirectOnAuthError: false })
+    if (!r.ok) return null
+    return await r.json()
+  } catch {
+    return null
+  }
+}
+
+export async function saveFavoriteBook(book = {}) {
+  if (!book?.id) return null
+  const r = await authFetchWithFallback('/favorites', {
+    method: 'POST',
+    body: JSON.stringify({
+      isFavorite: true,
+      bookId: String(book.id),
+      tenSach: book.tenSach || book.TenSach || '',
+      tacGia: book.tacGia || book.TacGia || '',
+      imageUrl: book.imageUrl || book.ImageUrl || '',
+      theLoai: book.theLoai || book.TheLoai || '',
+      soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
+    })
+  })
+  if (!r.ok) return null
+  return await r.json()
+}
+
+export async function removeFavoriteBook(bookId) {
+  if (!bookId) return false
+  const r = await authFetchWithFallback(`/favorites/${encodeURIComponent(String(bookId))}`, {
+    method: 'DELETE'
+  })
+  return r.ok
+}
+
 export async function borrowBook(cardNumber, bookId, quantity = 1) {
   const r = await authFetchWithFallback('/borrow', {
     method: 'POST',
