@@ -171,7 +171,7 @@ const store = useAppStore()
 const drawer = ref(true)
 const hovered = ref(false)
 const searchText = ref('')
-const expandedGroups = ref({ categories: true })
+const expandedGroups = ref({ categories: false })
 
 const isRail = computed(() => !hovered.value)
 const displayName = computed(() => getDisplayName(store.userInfo || {}, 'Độc giả'))
@@ -197,14 +197,6 @@ const menuItems = computed(() => [
   { title: 'Lịch sử', icon: 'mdi-history', route: 'history' },
   { title: 'Hồ sơ', icon: 'mdi-account-circle', route: 'profile' }
 ])
-
-watch(
-  () => route.name,
-  () => {
-    if (route.name === 'categories') expandedGroups.value.categories = true
-  },
-  { immediate: true }
-)
 
 function onSearch() {
   if (searchText.value) router.push({ name: 'dashboard', query: { q: searchText.value } })
@@ -278,13 +270,16 @@ function handleLogout() {
   flex-direction: column;
   gap: 2px;
   padding: 6px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 .nav-item-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -302,9 +297,9 @@ function handleLogout() {
 }
 
 .nav-icon-circle {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -314,7 +309,7 @@ function handleLogout() {
 }
 
 .nav-label {
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.7);
   white-space: nowrap;
@@ -338,20 +333,25 @@ function handleLogout() {
 .nav-children {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0 0 0 44px;
+  gap: 2px;
+  margin: 0 0 0 40px;
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .nav-child {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   border: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.72);
-  padding: 4px 0;
+  padding: 3px 0;
   cursor: pointer;
   text-align: left;
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .nav-child.active,

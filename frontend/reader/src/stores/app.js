@@ -33,7 +33,88 @@ export const useAppStore = defineStore('app', () => {
   const events = ref([])
   const fines = ref([])
   const userInfo = ref(getCachedUserInfo())
+  const favorites = ref(loadFavoritesForUser(userInfo.value))
   const loading = ref(false)
+
+  function normalizeIdentity(value = '') {
+    return String(value || '').trim().toLowerCase()
+  }
+
+  function currentUserKey(info = userInfo.value) {
+    return normalizeIdentity(
+      info?.username ||
+      info?.Username ||
+      info?.cardNumber ||
+      info?.CardNumber ||
+      localStorage.getItem('readerCard') ||
+      getCachedUserInfo().username ||
+      getCachedUserInfo().cardNumber ||
+      'anonymous'
+    ) || 'anonymous'
+  }
+
+  function favoritesStorage() {
+    try {
+      return JSON.parse(localStorage.getItem('readerFavoritesByUser') || '{}')
+    } catch {
+      return {}
+    }
+  }
+
+  function loadFavoritesForUser(info = {}) {
+    const map = favoritesStorage()
+    const key = currentUserKey(info)
+    const list = map[key]
+    return Array.isArray(list) ? list : []
+  }
+
+  function persistFavorites(list = favorites.value, info = userInfo.value) {
+    const map = favoritesStorage()
+    const key = currentUserKey(info)
+    map[key] = Array.isArray(list) ? list : []
+    localStorage.setItem('readerFavoritesByUser', JSON.stringify(map))
+  }
+
+  function normalizeFavoriteBook(book = {}) {
+    return {
+      id: String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? ''),
+      tenSach: book.tenSach ?? book.TenSach ?? book.title ?? book.Title ?? '—',
+      tacGia: book.tacGia ?? book.TacGia ?? book.author ?? book.Author ?? '—',
+      imageUrl: book.imageUrl ?? book.ImageUrl ?? '',
+      soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0),
+      theLoai: book.theLoai ?? book.TheLoai ?? ''
+    }
+  }
+
+  function favoriteIds() {
+    return new Set((favorites.value || []).map(item => String(item.id)))
+  }
+
+  function isFavorite(bookId) {
+    return favoriteIds().has(String(bookId))
+  }
+
+  function toggleFavorite(book) {
+    if (!book?.id) return false
+    const id = String(book.id)
+    const list = Array.isArray(favorites.value) ? [...favorites.value] : []
+    const idx = list.findIndex(item => String(item.id) === id)
+    if (idx >= 0) {
+      list.splice(idx, 1)
+    } else {
+      list.unshift(normalizeFavoriteBook(book))
+    }
+    favorites.value = list
+    persistFavorites(list)
+    return true
+  }
+
+  function removeFavorite(bookId) {
+    const id = String(bookId)
+    const list = (favorites.value || []).filter(item => String(item.id) !== id)
+    favorites.value = list
+    persistFavorites(list)
+  }
 
   function currentRole() {
     return String(
@@ -283,6 +364,7 @@ export const useAppStore = defineStore('app', () => {
         '',
       avatarUrl: info?.avatarUrl || info?.AvatarUrl || cached?.avatarUrl || cached?.AvatarUrl || cached?.avatar || cached?.Avatar || ''
     }
+    favorites.value = loadFavoritesForUser(userInfo.value)
     return info
   }
 
@@ -310,11 +392,13 @@ export const useAppStore = defineStore('app', () => {
   return {
     books, myTransactions, allTransactions, events, fines, userInfo, loading,
     cartItems,
+    favorites,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, totalUnpaidFines,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
     loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     addToCart, removeFromCart, clearCart,
+    isFavorite, toggleFavorite, removeFavorite,
     loadUserInfo, loadAll
   }
 })

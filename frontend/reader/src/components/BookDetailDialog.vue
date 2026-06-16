@@ -3,8 +3,17 @@
     <v-card v-if="book" rounded="xl" class="overflow-hidden">
       <div class="detail-hero" :style="heroBg">
         <div class="hero-overlay"></div>
-        <v-btn class="favorite-btn" icon variant="flat" size="small">
-          <v-icon size="20">mdi-heart-outline</v-icon>
+        <v-btn
+          class="favorite-btn"
+          :class="{ 'is-favorite': store.isFavorite(book.id) }"
+          icon
+          variant="flat"
+          size="small"
+          @click="store.toggleFavorite(book)"
+        >
+          <v-icon size="20" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
+            {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
+          </v-icon>
         </v-btn>
 
         <div class="hero-content">
@@ -276,6 +285,10 @@ function getBorrowUnitPrice(book = {}) {
   z-index: 20;
   background: rgba(255,255,255,0.92);
   color: #334155;
+}
+
+.favorite-btn.is-favorite {
+  background: rgba(255,255,255,0.98);
 }
 .detail-scroll {
   max-height: 520px;
