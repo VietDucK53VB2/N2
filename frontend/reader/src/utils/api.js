@@ -3,6 +3,7 @@ const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, '')}/login`
 const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
+const GATEWAY_CATALOG_BOOKS = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 let authBootstrapComplete = false
 
@@ -173,7 +174,9 @@ export async function authFetch(url, opts = {}) {
     ...(opts.headers || {})
   }
   const response = await fetch(url, { ...fetchOptions, headers })
-  if (authBootstrapComplete && redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
+  // Only treat 401 as a broken session. Some reader endpoints can legally return 403
+  // for forbidden aggregate data, and that should not bounce the user back to login.
+  if (authBootstrapComplete && redirectOnAuthError && t && response.status === 401) {
     forceLogin()
   }
   return response
@@ -251,8 +254,8 @@ async function fetchJsonFromCandidates(paths = []) {
 export async function fetchBooks() {
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin}/api/catalog/books`,
       `${window.location.origin}/api/books`,
+      GATEWAY_CATALOG_BOOKS,
       `${BASE}/books`
     ])
     return Array.isArray(data) ? data.map(normalizeBook) : []
@@ -270,7 +273,7 @@ export async function fetchTransactions(cardNumber) {
 
 export async function fetchAllTransactions() {
   try {
-    const r = await authFetchWithFallback('/transactions?pageSize=200')
+    const r = await authFetchWithFallback('/transactions?pageSize=200', { redirectOnAuthError: false })
     if (!r.ok) return []
     return await r.json()
   } catch { return [] }
@@ -398,9 +401,10 @@ export function normalizeBook(b = {}) {
   const soBanConLai = Number(b.soBanConLai ?? b.SoBanConLai ?? Math.max(soLuong - soBanDaMuon, 0))
   const moTa = b.moTa ?? b.MoTa ?? b.description ?? b.Description ?? ''
   const giaMuon = Number(b.giaMuon ?? b.GiaMuon ?? b.giaThue ?? b.GiaThue ?? b.price ?? b.Price ?? b.donGia ?? b.DonGia ?? 0)
+  const theLoai = b.theLoai ?? b.TheLoai ?? b.genre ?? b.Genre ?? b.category ?? b.Category ?? ''
 
   return {
-    id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn,
+    id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn, theLoai,
     soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon
   }
 }

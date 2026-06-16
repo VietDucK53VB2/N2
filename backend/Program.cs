@@ -227,6 +227,7 @@ app.Use(async (context, next) =>
 });
 app.UseAuthorization();
 
+app.MapGet("/favicon.ico", () => Results.NoContent());
 app.MapControllers();
 
 // Fallback: serve index.html for root and UI role pages

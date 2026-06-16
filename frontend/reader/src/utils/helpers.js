@@ -32,6 +32,45 @@ export function getInitials(name) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const text = String(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+export function getDisplayName(user = {}, fallback = 'Độc giả') {
+  return firstNonEmpty(
+    user.fullName,
+    user.FullName,
+    user.username,
+    user.Username,
+    user.name,
+    user.Name,
+    user.full_name,
+    user.fullName,
+    fallback
+  ) || fallback
+}
+
+export function getDisplayCardNumber(user = {}, fallback = 'Chưa liên kết') {
+  return firstNonEmpty(
+    user.cardNumber,
+    user.CardNumber,
+    user.readerCardNumber,
+    user.ReaderCardNumber,
+    user.libraryCardNumber,
+    user.LibraryCardNumber,
+    user.libraryCard?.cardNumber,
+    user.libraryCard?.CardNumber,
+    user.user?.cardNumber,
+    user.user?.CardNumber,
+    fallback
+  ) || fallback
+}
+
 export function getGenreTags(tenSach) {
   const tags = []
   const t = (tenSach || '').toLowerCase()
@@ -44,4 +83,97 @@ export function getGenreTags(tenSach) {
   if (t.includes('tâm lý')) tags.push('Tâm lý')
   if (!tags.length) tags.push('Sách hay', 'Đề xuất')
   return tags.slice(0, 3)
+}
+
+function normalizeCategoryLabel(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .trim()
+}
+
+export function slugifyCategory(value) {
+  return normalizeCategoryLabel(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+export function extractBookCategories(book = {}) {
+  const raw = [
+    book.theLoai,
+    book.TheLoai,
+    book.genre,
+    book.Genre,
+    book.category,
+    book.Category,
+    book.chuDe,
+    book.ChuDe,
+    book.type,
+    book.Type
+  ]
+
+  const categories = []
+  for (const value of raw) {
+    if (Array.isArray(value)) {
+      categories.push(...value)
+      continue
+    }
+    if (value === null || value === undefined) continue
+    const text = String(value).trim()
+    if (!text) continue
+    categories.push(...text.split(/[;,/|•]+/))
+  }
+
+  const cleaned = categories
+    .map(normalizeCategoryLabel)
+    .filter(Boolean)
+
+  if (cleaned.length) return [...new Set(cleaned)]
+
+  return []
+}
+
+export function buildCatalogCategories(books = []) {
+  const seen = new Map()
+  for (const book of books || []) {
+    for (const label of extractBookCategories(book)) {
+      const value = slugifyCategory(label)
+      if (!value) continue
+      if (!seen.has(value)) {
+        seen.set(value, {
+          label,
+          value,
+          count: 0
+        })
+      }
+      seen.get(value).count += 1
+    }
+  }
+  if (!seen.size) {
+    for (const book of books || []) {
+      for (const label of getGenreTags(book.tenSach || book.TenSach || '')) {
+        const value = slugifyCategory(label)
+        if (!value) continue
+        if (!seen.has(value)) {
+          seen.set(value, {
+            label,
+            value,
+            count: 0
+          })
+        }
+        seen.get(value).count += 1
+      }
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'))
+}
+
+export function bookMatchesCategory(book = {}, categoryValue = '') {
+  const target = slugifyCategory(categoryValue)
+  if (!target || target === 'all') return true
+  return extractBookCategories(book).some(label => slugifyCategory(label) === target)
 }

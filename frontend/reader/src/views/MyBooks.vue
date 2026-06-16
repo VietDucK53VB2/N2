@@ -16,7 +16,7 @@
     </v-chip-group>
 
     <v-row v-if="filteredBooks.length">
-      <v-col v-for="tx in filteredBooks" :key="tx.Id || tx.id" cols="12" sm="6" lg="4" xl="3">
+      <v-col v-for="tx in filteredBooks" :key="tx.Id || tx.id" cols="6" sm="4" md="3" lg="2">
         <v-card class="book-item" hover>
           <div class="book-cover" :style="{ backgroundColor: titleColor(tx.TenSach || tx.tenSach) }">
             <v-img v-if="tx.ImageUrl || tx.imageUrl" :src="tx.ImageUrl || tx.imageUrl" cover height="100%" />
@@ -361,7 +361,8 @@ onMounted(loadData)
 }
 .book-cover {
   position: relative;
-  height: 200px;
+  aspect-ratio: 2 / 3;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;

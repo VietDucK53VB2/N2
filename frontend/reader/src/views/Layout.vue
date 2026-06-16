@@ -35,13 +35,24 @@
             <transition name="fade-text">
               <span v-if="!isRail" class="nav-label">{{ item.title }}</span>
             </transition>
-            <v-chip v-if="item.badge && !isRail" size="x-small" color="error" variant="flat" class="nav-badge pulse-badge">
+            <v-chip
+              v-if="item.badge && !isRail"
+              size="x-small"
+              color="error"
+              variant="flat"
+              class="nav-badge pulse-badge"
+            >
               {{ item.badge }}
             </v-chip>
           </div>
 
           <div v-else class="nav-group">
-            <div class="nav-item-wrap" :class="{ active: $route.name === item.route }" :style="{ animationDelay: idx * 50 + 'ms' }" @click="toggleGroup(item)">
+            <div
+              class="nav-item-wrap"
+              :class="{ active: $route.name === item.route }"
+              :style="{ animationDelay: idx * 50 + 'ms' }"
+              @click="toggleGroup(item)"
+            >
               <div class="nav-icon-circle">
                 <v-icon size="18" color="white">{{ item.icon }}</v-icon>
               </div>
@@ -52,15 +63,16 @@
                 {{ expandedGroups[item.route] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
               </v-icon>
             </div>
+
             <transition name="fade-text">
               <div v-if="expandedGroups[item.route] && !isRail" class="nav-children">
                 <button
                   v-for="child in item.children"
-                  :key="child.route"
+                  :key="child.value"
                   type="button"
                   class="nav-child"
-                  :class="{ active: $route.name === child.route }"
-                  @click.stop="$router.push({ name: 'categories', params: { category: child.route.replace('categories-', '') } })"
+                  :class="{ active: activeCategorySlug === slugifyCategory(child.value) }"
+                  @click.stop="$router.push({ name: 'categories', params: { category: child.value } })"
                 >
                   <span class="nav-child-dot" />
                   <span>{{ child.label }}</span>
@@ -133,11 +145,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { logout } from '@/utils/api'
-import { getInitials } from '@/utils/helpers'
+import { getInitials, getDisplayName, buildCatalogCategories, slugifyCategory } from '@/utils/helpers'
 
 const router = useRouter()
 const route = useRoute()
@@ -146,30 +158,40 @@ const store = useAppStore()
 const drawer = ref(true)
 const hovered = ref(false)
 const searchText = ref('')
-const expandedGroups = ref({ categories: false })
+const expandedGroups = ref({ categories: true })
 
 const isRail = computed(() => !hovered.value)
-const initials = computed(() => getInitials(store.userInfo?.fullName))
+const displayName = computed(() => getDisplayName(store.userInfo || {}, 'Độc giả'))
+const initials = computed(() => getInitials(displayName.value))
 const avatarUrl = computed(() => store.userInfo?.avatarUrl || store.userInfo?.AvatarUrl || store.userInfo?.avatar || store.userInfo?.Avatar || '')
+const catalogCategories = computed(() => buildCatalogCategories(store.books))
+const activeCategorySlug = computed(() => slugifyCategory(route.params.category || 'all'))
 
 const menuItems = computed(() => [
   { title: 'Trang chủ', icon: 'mdi-home-variant', route: 'dashboard' },
   { title: 'Sách của tôi', icon: 'mdi-bookshelf', route: 'mybooks', badge: store.activeTransactions.length || null },
   { title: 'Yêu thích', icon: 'mdi-heart', route: 'favorites' },
-  { title: 'Giỏ mượn', icon: 'mdi-cart-outline', route: 'cart', badge: 0 },
+  { title: 'Giỏ mượn', icon: 'mdi-cart-outline', route: 'cart', badge: store.cartItems.length || null },
   {
     title: 'Thể loại',
     icon: 'mdi-shape-outline',
     route: 'categories',
     children: [
-      { label: 'Tất cả', route: 'categories-all' },
-      { label: 'Văn học', route: 'categories-vanhoc' },
-      { label: 'Khoa học', route: 'categories-khoahoc' }
+      { label: 'Tất cả', value: 'all' },
+      ...catalogCategories.value
     ]
   },
   { title: 'Lịch sử', icon: 'mdi-history', route: 'history' },
   { title: 'Hồ sơ', icon: 'mdi-account-circle', route: 'profile' }
 ])
+
+watch(
+  () => route.name,
+  () => {
+    if (route.name === 'categories') expandedGroups.value.categories = true
+  },
+  { immediate: true }
+)
 
 function onSearch() {
   if (searchText.value) router.push({ name: 'dashboard', query: { q: searchText.value } })
@@ -193,24 +215,74 @@ function handleLogout() {
   border-radius: 0 20px 20px 0 !important;
   border: none !important;
   box-shadow: 4px 0 20px rgba(6, 78, 59, 0.25) !important;
-  display: flex; flex-direction: column; padding: 10px 6px; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  overflow: visible !important; z-index: 100; position: fixed !important; top: 0; left: 0; height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 6px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: visible !important;
+  z-index: 100;
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  height: 100vh;
 }
 .sidebar-top { display: flex; align-items: center; gap: 12px; padding: 10px 6px 14px; }
-.logo-circle { width: 40px; height: 40px; min-width: 40px; border-radius: 12px; background: rgba(255,255,255,0.13); border: 1px solid rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.logo-circle {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.13);
+  border: 1px solid rgba(255,255,255,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 .logo-text { font-size: 14px; font-weight: 800; color: #fff; white-space: nowrap; }
 .nav-list { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
-.nav-item-wrap { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 12px; cursor: pointer; transition: all 0.2s ease; animation: navIn 0.35s ease both; }
+.nav-item-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  animation: navIn 0.35s ease both;
+}
 .nav-item-wrap:hover { background: rgba(255,255,255,0.1); transform: translateX(2px); }
 .nav-item-wrap.active { background: rgba(255,255,255,0.17); box-shadow: 0 2px 10px rgba(255,255,255,0.08); }
-.nav-icon-circle { width: 36px; height: 36px; min-width: 36px; border-radius: 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; }
+.nav-icon-circle {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .nav-label { font-size: 12.5px; font-weight: 500; color: rgba(255,255,255,0.7); white-space: nowrap; }
 .nav-badge { margin-left: auto; }
 .nav-group { display: flex; flex-direction: column; gap: 4px; }
 .nav-chevron { margin-left: auto; color: rgba(255,255,255,0.7); }
 .nav-children { display: flex; flex-direction: column; gap: 4px; margin: 0 0 0 44px; }
-.nav-child { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; color: rgba(255,255,255,0.72); padding: 4px 0; cursor: pointer; text-align: left; }
-.nav-child.active, .nav-child:hover { color: #fff; }
+.nav-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.72);
+  padding: 4px 0;
+  cursor: pointer;
+  text-align: left;
+}
+.nav-child.active,
+.nav-child:hover { color: #fff; }
 .nav-child-dot { width: 6px; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.55); }
 .sidebar-bottom {
   position: absolute;
@@ -222,10 +294,21 @@ function handleLogout() {
   background: linear-gradient(180deg, rgba(4,120,87,0), rgba(4,120,87,0.08));
 }
 .logout-circle { background: rgba(239,68,68,0.15) !important; border-color: rgba(239,68,68,0.25) !important; }
-.reader-appbar { border-bottom: 1px solid #f0f0f0 !important; position: fixed !important; top: 0; left: 64px !important; right: 0 !important; width: calc(100% - 64px) !important; z-index: 50; background: #fff !important; }
+.reader-appbar {
+  border-bottom: 1px solid #f0f0f0 !important;
+  position: fixed !important;
+  top: 0;
+  left: 64px !important;
+  right: 0 !important;
+  width: calc(100% - 64px) !important;
+  z-index: 50;
+  background: #fff !important;
+}
 .reader-main { background: #f7f9f8; min-height: 100vh; margin-left: 64px; padding-top: 64px; }
 .header-avatar { background: linear-gradient(135deg, #065f46, #047857) !important; color: white !important; font-weight: 700; font-size: 13px; cursor: pointer; }
-.fade-text-enter-active, .fade-text-leave-active { transition: all 0.2s ease; }
-.fade-text-enter-from, .fade-text-leave-to { opacity: 0; transform: translateX(-4px); }
+.fade-text-enter-active,
+.fade-text-leave-active { transition: all 0.2s ease; }
+.fade-text-enter-from,
+.fade-text-leave-to { opacity: 0; transform: translateX(-4px); }
 @keyframes navIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 </style>

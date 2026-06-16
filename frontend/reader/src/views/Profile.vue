@@ -33,10 +33,17 @@
             <v-row dense>
               <v-col cols="6" md="3">
                 <div class="info-box">
-                  <span class="info-label">MÃ ĐỘC GIẢ</span>
+                  <span class="info-label">Mã thẻ thư viện</span>
                   <span class="info-value text-primary font-weight-bold">
-                    {{ userInfo.cardNumber || '—' }}
-                    <v-icon size="14" class="ml-1 cursor-pointer" @click="copyCard">mdi-content-copy</v-icon>
+                    {{ displayCardNumber }}
+                    <v-icon
+                      v-if="userInfo.cardNumber || userInfo.CardNumber || userInfo.libraryCard?.cardNumber"
+                      size="14"
+                      class="ml-1 cursor-pointer"
+                      @click="copyCard"
+                    >
+                      mdi-content-copy
+                    </v-icon>
                   </span>
                 </div>
               </v-col>
@@ -138,7 +145,7 @@
 import { ref, computed, reactive } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { payFine } from '@/utils/api'
-import { getInitials, formatDate, formatMoney } from '@/utils/helpers'
+import { getInitials, getDisplayCardNumber, formatDate, formatMoney } from '@/utils/helpers'
 
 const store = useAppStore()
 const editDialog = ref(false)
@@ -151,6 +158,7 @@ const avatarInput = ref(null)
 const userInfo = computed(() => store.userInfo || {})
 const initials = computed(() => getInitials(userInfo.value.fullName))
 const avatarUrl = computed(() => userInfo.value.avatarUrl || userInfo.value.AvatarUrl || userInfo.value.avatar || userInfo.value.Avatar || '')
+const displayCardNumber = computed(() => getDisplayCardNumber(userInfo.value))
 const roleName = computed(() => {
   const role = userInfo.value.role
   if (role === 'Admin') return 'Quản trị viên'
@@ -245,7 +253,7 @@ async function payAllFines() {
 }
 
 function copyCard() {
-  navigator.clipboard?.writeText(userInfo.value.cardNumber || '')
+  navigator.clipboard?.writeText(displayCardNumber.value || '')
   showMessage('Đã sao chép mã thẻ.')
 }
 </script>
