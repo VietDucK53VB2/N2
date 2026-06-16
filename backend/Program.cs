@@ -240,7 +240,7 @@ app.Use(async (context, next) =>
     // Root should go to login so the host landing page behaves as expected.
     if (path == "/" || path == "/index.html")
     {
-        context.Response.Redirect("/login");
+        context.Response.Redirect("http://163.223.210.87/login");
         return;
     }
 
