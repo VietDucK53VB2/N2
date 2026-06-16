@@ -225,10 +225,15 @@ async function loadReviews(bookId) {
   reviewsLoading.value = true
   try {
     const data = await fetchBookReviews(String(bookId))
-    const group = Array.isArray(data)
-      ? data.find(item => String(item.bookId || item.BookId || '') === String(bookId))
-      : null
-    const list = Array.isArray(group?.reviews || group?.Reviews) ? (group.reviews || group.Reviews) : []
+    const groups = Array.isArray(data) ? data : []
+    const group = groups.find(item => String(item.bookId || item.BookId || '') === String(bookId))
+    const directReviews = Array.isArray(data) && data.length && !('reviews' in (data[0] || {})) && !('Reviews' in (data[0] || {}))
+      ? data
+      : []
+    const list =
+      Array.isArray(group?.reviews || group?.Reviews)
+        ? (group.reviews || group.Reviews)
+        : directReviews
     reviews.value = list.map(mapReview)
   } catch {
     reviews.value = []

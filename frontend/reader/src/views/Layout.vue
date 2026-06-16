@@ -1,23 +1,16 @@
 <template>
   <div class="reader-shell">
     <v-navigation-drawer
-      v-model="drawer"
-      :rail="isRail"
       permanent
       :width="220"
-      :rail-width="64"
       class="glass-sidebar"
       elevation="0"
-      @mouseenter="hovered = true"
-      @mouseleave="hovered = false"
     >
       <div class="sidebar-top">
         <div class="logo-circle" @click="$router.push('/')">
           <v-icon color="white" size="20">mdi-book-open-page-variant</v-icon>
         </div>
-        <transition name="fade-text">
-          <span v-if="!isRail" class="logo-text">Thư viện số</span>
-        </transition>
+        <span class="logo-text">Thư viện số</span>
       </div>
 
       <div class="nav-list">
@@ -32,11 +25,9 @@
             <div class="nav-icon-circle">
               <v-icon size="18" color="white">{{ item.icon }}</v-icon>
             </div>
-            <transition name="fade-text">
-              <span v-if="!isRail" class="nav-label">{{ item.title }}</span>
-            </transition>
+            <span class="nav-label">{{ item.title }}</span>
             <v-chip
-              v-if="item.badge && !isRail"
+              v-if="item.badge"
               size="x-small"
               color="error"
               variant="flat"
@@ -49,36 +40,32 @@
           <div v-else class="nav-group">
             <div
               class="nav-item-wrap"
-              :class="{ active: $route.name === item.route }"
+              :class="{ active: $route.name === item.route || route.name === 'categories' }"
               :style="{ animationDelay: idx * 50 + 'ms' }"
               @click="toggleGroup(item)"
             >
               <div class="nav-icon-circle">
                 <v-icon size="18" color="white">{{ item.icon }}</v-icon>
               </div>
-              <transition name="fade-text">
-                <span v-if="!isRail" class="nav-label">{{ item.title }}</span>
-              </transition>
-              <v-icon v-if="!isRail" size="16" class="nav-chevron">
+              <span class="nav-label">{{ item.title }}</span>
+              <v-icon size="16" class="nav-chevron">
                 {{ expandedGroups[item.route] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}
               </v-icon>
             </div>
 
-            <transition name="fade-text">
-              <div v-if="expandedGroups[item.route] && !isRail" class="nav-children">
-                <button
-                  v-for="child in item.children"
-                  :key="child.value"
-                  type="button"
-                  class="nav-child"
-                  :class="{ active: activeCategorySlug === slugifyCategory(child.value) }"
-                  @click.stop="$router.push({ name: 'categories', params: { category: child.value } })"
-                >
-                  <span class="nav-child-dot" />
-                  <span>{{ child.label }}</span>
-                </button>
-              </div>
-            </transition>
+            <div v-if="expandedGroups[item.route]" class="nav-children">
+              <button
+                v-for="child in item.children"
+                :key="child.value"
+                type="button"
+                class="nav-child"
+                :class="{ active: activeCategorySlug === slugifyCategory(child.value) }"
+                @click.stop="$router.push({ name: 'categories', params: { category: child.value } })"
+              >
+                <span class="nav-child-dot" />
+                <span>{{ child.label }}</span>
+              </button>
+            </div>
           </div>
         </template>
       </div>
@@ -88,9 +75,7 @@
           <div class="nav-icon-circle logout-circle">
             <v-icon size="18" color="white">mdi-logout</v-icon>
           </div>
-          <transition name="fade-text">
-            <span v-if="!isRail" class="nav-label sidebar-logout">Đăng xuất</span>
-          </transition>
+          <span class="nav-label sidebar-logout">Đăng xuất</span>
         </div>
       </div>
     </v-navigation-drawer>
@@ -130,7 +115,7 @@
                 </v-avatar>
                 <div class="profile-pill__meta">
                   <span class="profile-pill__name">{{ displayName }}</span>
-                  <span class="profile-pill__role">{{ store.userInfo?.role || 'Reader' }}</span>
+                  <span class="profile-pill__role">{{ userRoleLabel }}</span>
                 </div>
               </v-btn>
             </template>
@@ -168,17 +153,15 @@ const router = useRouter()
 const route = useRoute()
 const store = useAppStore()
 
-const drawer = ref(true)
-const hovered = ref(false)
 const searchText = ref('')
 const expandedGroups = ref({ categories: false })
 
-const isRail = computed(() => !hovered.value)
 const displayName = computed(() => getDisplayName(store.userInfo || {}, 'Độc giả'))
 const initials = computed(() => getInitials(displayName.value))
 const avatarUrl = computed(() => store.userInfo?.avatarUrl || store.userInfo?.AvatarUrl || store.userInfo?.avatar || store.userInfo?.Avatar || '')
 const catalogCategories = computed(() => buildCatalogCategories(store.books))
 const activeCategorySlug = computed(() => slugifyCategory(route.params.category || 'all'))
+const userRoleLabel = computed(() => String(store.userInfo?.role || 'Reader').trim() || 'Reader')
 
 const menuItems = computed(() => [
   { title: 'Trang chủ', icon: 'mdi-home-variant', route: 'dashboard' },
@@ -211,6 +194,16 @@ function toggleGroup(item) {
 function handleLogout() {
   logout()
 }
+
+watch(
+  () => route.name,
+  name => {
+    if (name === 'categories') {
+      expandedGroups.value.categories = true
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped lang="scss">
@@ -227,8 +220,7 @@ function handleLogout() {
   display: flex;
   flex-direction: column;
   padding: 10px 6px;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  overflow: visible !important;
+  overflow: hidden !important;
   z-index: 100;
   position: fixed !important;
   top: 0;
@@ -257,8 +249,13 @@ function handleLogout() {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.logo-circle:hover {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .logo-text {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   color: #fff;
   white-space: nowrap;
@@ -309,10 +306,11 @@ function handleLogout() {
 }
 
 .nav-label {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
+  min-width: 0;
 }
 
 .nav-badge {
@@ -335,8 +333,9 @@ function handleLogout() {
   flex-direction: column;
   gap: 2px;
   margin: 0 0 0 40px;
-  max-height: calc(100vh - 320px);
+  max-height: 260px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 2px;
 }
 
@@ -347,10 +346,10 @@ function handleLogout() {
   border: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.72);
-  padding: 3px 0;
+  padding: 2px 0;
   cursor: pointer;
   text-align: left;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.25;
 }
 
@@ -364,6 +363,7 @@ function handleLogout() {
   height: 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
 }
 
 .sidebar-bottom {
@@ -388,9 +388,9 @@ function handleLogout() {
 .reader-appbar {
   position: fixed !important;
   top: 0;
-  left: 64px !important;
+  left: 220px !important;
   right: 0 !important;
-  width: calc(100% - 64px) !important;
+  width: calc(100% - 220px) !important;
   z-index: 50;
   background: #fff !important;
   border-bottom: 1px solid #edf0ea !important;
@@ -493,7 +493,7 @@ function handleLogout() {
 .reader-main {
   background: #f7f9f8;
   min-height: 100vh;
-  margin-left: 64px;
+  margin-left: 220px;
   padding-top: 72px;
 }
 
@@ -524,25 +524,10 @@ function handleLogout() {
   .reader-appbar {
     left: 0 !important;
     width: 100% !important;
-    padding-inline: 12px;
   }
 
   .reader-main {
     margin-left: 0;
-    padding-top: 72px;
-  }
-
-  .reader-greeting__text {
-    font-size: 16px;
-  }
-
-  .header-search {
-    width: min(48vw, 220px);
-    min-width: 160px;
-  }
-
-  .profile-pill__role {
-    display: none;
   }
 }
 </style>

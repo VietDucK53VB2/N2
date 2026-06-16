@@ -8,7 +8,7 @@ public sealed class HomeController : ControllerBase
     [HttpGet("/")]
     public IActionResult Index()
     {
-        return Redirect("/swagger/index.html");
+        return Redirect("/login");
     }
 
     [HttpGet("/ping")]
