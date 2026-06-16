@@ -2,16 +2,19 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   // Reader routes
-  {
-    path: '/',
-    component: () => import('@/views/Layout.vue'),
-    children: [
-      { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
-      { path: 'mybooks', name: 'mybooks', component: () => import('@/views/MyBooks.vue') },
-      { path: 'history', name: 'history', component: () => import('@/views/History.vue') },
-      { path: 'profile', name: 'profile', component: () => import('@/views/Profile.vue') }
-    ]
-  },
+    {
+      path: '/',
+      component: () => import('@/views/Layout.vue'),
+      children: [
+        { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
+        { path: 'mybooks', name: 'mybooks', component: () => import('@/views/MyBooks.vue') },
+        { path: 'favorites', name: 'favorites', component: () => import('@/views/Favorites.vue') },
+        { path: 'cart', name: 'cart', component: () => import('@/views/Cart.vue') },
+        { path: 'categories/:category?', name: 'categories', component: () => import('@/views/Categories.vue') },
+        { path: 'history', name: 'history', component: () => import('@/views/History.vue') },
+        { path: 'profile', name: 'profile', component: () => import('@/views/Profile.vue') }
+      ]
+    },
   // Librarian routes
   {
     path: '/librarian',
