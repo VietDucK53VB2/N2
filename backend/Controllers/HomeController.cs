@@ -17,6 +17,13 @@ public sealed class HomeController : ControllerBase
         return Ok("pong");
     }
 
+    [HttpGet("/login")]
+    public IActionResult Login()
+    {
+        var query = Request.QueryString.HasValue ? Request.QueryString.Value : string.Empty;
+        return Redirect($"/ui/librarian/{query}#/");
+    }
+
     [HttpGet("/ui/librarian/ping")]
     public IActionResult LibrarianPing()
     {
