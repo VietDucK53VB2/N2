@@ -16,4 +16,10 @@ public sealed class HomeController : ControllerBase
     {
         return Ok("pong");
     }
+
+    [HttpGet("/ui/librarian/ping")]
+    public IActionResult LibrarianPing()
+    {
+        return Ok("pong");
+    }
 }
