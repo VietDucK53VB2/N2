@@ -226,7 +226,7 @@ async function authFetchWithFallback(path, opts = {}) {
   const fallback = `${SAME_ORIGIN_BASE}${path}`
   try {
     const response = await authFetch(primary, opts)
-    if (response.ok || (response.status >= 400 && response.status < 500)) return response
+    if (response.ok || response.status === 401) return response
   } catch {
     // Try the hosted N2 API if the gateway is temporarily unavailable.
   }

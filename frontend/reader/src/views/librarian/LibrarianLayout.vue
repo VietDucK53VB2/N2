@@ -62,9 +62,15 @@
             </v-badge>
           </v-btn>
 
-          <v-avatar size="40" class="topbar-avatar" :image="avatarUrl || undefined">
-            <span v-if="!avatarUrl">{{ initials }}</span>
-          </v-avatar>
+          <v-btn variant="flat" rounded="xl" class="profile-pill">
+            <v-avatar size="34" class="profile-pill__avatar" :image="avatarUrl || undefined">
+              <span v-if="!avatarUrl">{{ initials }}</span>
+            </v-avatar>
+            <div class="profile-pill__meta">
+              <span class="profile-pill__name">{{ displayName }}</span>
+              <span class="profile-pill__role">{{ userRoleLabel }}</span>
+            </div>
+          </v-btn>
         </div>
       </div>
 
@@ -93,6 +99,12 @@ const userInfo = computed(() => appStore.userInfo || getCachedUserInfo())
 const displayName = computed(() => getDisplayName(userInfo.value, 'Thủ thư'))
 const initials = computed(() => getInitials(displayName.value))
 const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
+const userRoleLabel = computed(() => {
+  const role = String(userInfo.value?.role || userInfo.value?.Role || 'Librarian').toLowerCase()
+  if (role === 'admin') return 'Admin'
+  if (role === 'reader') return 'Reader'
+  return 'Librarian'
+})
 
 const navItems = computed(() => [
   { title: 'Dashboard', icon: 'mdi-view-dashboard', route: 'lib-overview' },
@@ -205,11 +217,42 @@ function handleLogout() {
   color: #334155;
 }
 
-.topbar-avatar {
-  background: linear-gradient(135deg, #7c3aed, #c026d3);
-  color: white;
+.profile-pill {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px 0 8px;
+  background: #f7fbf8;
+  border: 1px solid #dbe8de;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+  text-transform: none;
+}
+
+.profile-pill__avatar {
+  margin-right: 10px;
+  background: linear-gradient(135deg, #7c3aed, #c026d3) !important;
+  color: white !important;
   font-weight: 700;
+  font-size: 12px;
+}
+
+.profile-pill__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.05;
+  min-width: 0;
+}
+
+.profile-pill__name {
   font-size: 13px;
-  cursor: pointer;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.profile-pill__role {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
 }
 </style>

@@ -9,7 +9,9 @@
           icon
           variant="flat"
           size="small"
-          @click="store.toggleFavorite(book)"
+          type="button"
+          :ripple="false"
+          @click.stop.prevent="handleToggleFavorite"
         >
           <v-icon size="20" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
             {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
@@ -55,19 +57,25 @@
           <div class="d-flex align-center justify-space-between mb-3">
             <div>
               <h4 class="text-subtitle-2 font-weight-bold mb-1">Đánh giá độc giả</h4>
-              <p class="text-caption text-grey">Một vài nhận xét mẫu để bạn test giao diện.</p>
+              <p class="text-caption text-grey">
+                {{ reviewsLoading ? 'Đang tải đánh giá...' : (reviews.length ? 'Đánh giá thật từ độc giả đã mượn sách.' : 'Chưa có đánh giá nào cho cuốn sách này.') }}
+              </p>
             </div>
             <div class="rating-summary">
               <div class="rating-stars">
-                <v-icon v-for="n in 5" :key="n" size="18" color="amber">mdi-star</v-icon>
+                <v-icon v-for="n in 5" :key="n" size="18" :color="n <= roundedRating ? 'amber' : 'grey-lighten-3'">mdi-star</v-icon>
               </div>
-              <strong>{{ avgRating }}/5</strong>
+              <strong>{{ avgRating }}</strong>
               <span class="text-caption text-grey">({{ reviews.length }} lượt)</span>
             </div>
           </div>
 
-          <div class="review-list">
-            <div v-for="review in reviews" :key="review.name" class="review-item">
+          <v-alert v-if="!reviewsLoading && !reviews.length" type="info" variant="tonal" density="compact">
+            Cuốn sách này chưa có lượt đánh giá nào.
+          </v-alert>
+
+          <div v-else class="review-list">
+            <div v-for="review in reviews" :key="review.reviewKey" class="review-item">
               <v-avatar size="34" class="review-avatar">{{ review.initials }}</v-avatar>
               <div class="review-body">
                 <div class="d-flex align-center justify-space-between">
@@ -143,8 +151,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { borrowBook, getReaderCard } from '@/utils/api'
+import { borrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
 import { titleColor, formatMoney } from '@/utils/helpers'
+import dayjs from 'dayjs'
+import 'dayjs/locale/vi'
+dayjs.locale('vi')
 
 const props = defineProps({
   modelValue: Boolean,
@@ -158,14 +169,17 @@ const errorMessage = ref('')
 const quantity = ref(1)
 const borrowDuration = ref(14)
 const borrowReturnAt = ref('')
-
-const reviews = [
-  { name: 'LIB-199999', initials: 'L', rating: 5, date: '16:31:44 7/6/2026', comment: 'Nội dung cuốn hút, rất hợp để test giao diện đánh giá.' }
-]
-
+const reviews = ref([])
+const reviewsLoading = ref(false)
 const avgRating = computed(() => {
-  const total = reviews.reduce((s, r) => s + r.rating, 0)
-  return (total / reviews.length).toFixed(1)
+  if (!reviews.value.length) return '0.0/5'
+  const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
+  return `${(total / reviews.value.length).toFixed(1)}/5`
+})
+const roundedRating = computed(() => {
+  if (!reviews.value.length) return 0
+  const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
+  return Math.max(0, Math.min(5, Math.round(total / reviews.value.length)))
 })
 
 const heroBg = computed(() => {
@@ -184,13 +198,57 @@ const durationSummary = computed(() => {
   return `${formatMoney(unitPrice.value)} x ${duration} ngày x ${quantity.value} cuốn`
 })
 
+function mapReview(review = {}) {
+  const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
+  return {
+    reviewKey: review.id || review.reviewId || `${fullName}-${review.createdAt || review.CreatedAt || Math.random()}`,
+    initials: String(fullName).split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2) || 'DG',
+    name: fullName,
+    rating: Number(review.rating ?? review.Rating ?? 0),
+    date: formatReviewDate(review.createdAt || review.CreatedAt),
+    comment: review.comment || review.Comment || ''
+  }
+}
+
+function formatReviewDate(value) {
+  if (!value) return '—'
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('HH:mm:ss DD/MM/YYYY') : String(value)
+}
+
+async function loadReviews(bookId) {
+  if (!bookId) {
+    reviews.value = []
+    return
+  }
+
+  reviewsLoading.value = true
+  try {
+    const data = await fetchBookReviews(String(bookId))
+    const group = Array.isArray(data)
+      ? data.find(item => String(item.bookId || item.BookId || '') === String(bookId))
+      : null
+    const list = Array.isArray(group?.reviews || group?.Reviews) ? (group.reviews || group.Reviews) : []
+    reviews.value = list.map(mapReview)
+  } catch {
+    reviews.value = []
+  } finally {
+    reviewsLoading.value = false
+  }
+}
+
 watch(() => props.book?.id, () => {
   quantity.value = 1
   borrowDuration.value = 14
   const now = new Date()
   borrowReturnAt.value = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   errorMessage.value = ''
-})
+  loadReviews(props.book?.id)
+}, { immediate: true })
+
+async function handleToggleFavorite() {
+  await store.toggleFavorite(props.book)
+}
 
 async function handleBorrow() {
   errorMessage.value = ''

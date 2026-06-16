@@ -50,6 +50,25 @@
               </v-col>
             </v-row>
 
+            <div class="timeline-box mb-3">
+              <div class="timeline-line">
+                <span class="timeline-label">Yêu cầu gửi lúc:</span>
+                <span class="timeline-value">{{ formatDateTime(requestDate(tx)) }}</span>
+              </div>
+              <div class="timeline-line">
+                <span class="timeline-label">Tính thời gian mượn:</span>
+                <span class="timeline-value" :class="{ 'text-warning': store.isPending(tx), 'text-error': store.isOverdue(tx) }">
+                  {{ loanTimeText(tx) }}
+                </span>
+              </div>
+              <div v-if="timeRemainderText(tx)" class="timeline-line">
+                <span class="timeline-label">Còn lại:</span>
+                <span class="timeline-value" :class="{ 'text-warning': !store.isOverdue(tx), 'text-error': store.isOverdue(tx) }">
+                  {{ timeRemainderText(tx) }}
+                </span>
+              </div>
+            </div>
+
             <v-progress-linear
               :model-value="progressPercent(tx)"
               :color="progressColor(tx)"
@@ -74,10 +93,10 @@
               variant="text"
               color="amber-darken-2"
               prepend-icon="mdi-star"
-              :disabled="hasReviewed(tx)"
+              :disabled="!canReview(tx)"
               @click="openReview(tx)"
             >
-              {{ hasReviewed(tx) ? 'Đã đánh giá' : 'Đánh giá' }}
+              {{ reviewButtonText(tx) }}
             </v-btn>
           </v-card-text>
         </v-card>
@@ -152,6 +171,9 @@ import {
   fetchBookReviews
 } from '@/utils/api'
 import { titleColor, formatDate, daysLeft } from '@/utils/helpers'
+import dayjs from 'dayjs'
+import 'dayjs/locale/vi'
+dayjs.locale('vi')
 
 const store = useAppStore()
 const filter = ref('all')
@@ -209,6 +231,59 @@ function statusText(tx) {
   if (store.isOverdue(tx)) return 'Quá hạn'
   const d = daysLeft(tx.DueAt || tx.dueAt)
   return d !== null ? `Còn ${d} ngày` : 'Đang mượn'
+}
+
+function requestDate(tx) {
+  return tx.RequestDate || tx.requestDate || tx.CreatedAt || tx.createdAt || tx.BorrowedAt || tx.borrowedAt || ''
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm:ss') : formatDate(value)
+}
+
+function formatDuration(from, to = new Date()) {
+  if (!from || !to) return '—'
+  const start = new Date(from)
+  const end = new Date(to)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—'
+  const diff = Math.max(0, Math.abs(end.getTime() - start.getTime()))
+  const days = Math.floor(diff / 86400000)
+  const hours = Math.floor((diff % 86400000) / 3600000)
+  const minutes = Math.floor((diff % 3600000) / 60000)
+  const seconds = Math.floor((diff % 60000) / 1000)
+  return `${days} ngày ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function loanTimeText(tx) {
+  if (store.isPending(tx)) return 'Chưa bắt đầu tính thời gian mượn'
+  const borrowedAt = requestDate(tx)
+  return borrowedAt ? `Đã mượn: ${formatDuration(borrowedAt)}` : 'Đã mượn'
+}
+
+function timeRemainderText(tx) {
+  if (store.isPending(tx)) return ''
+  const dueAt = tx.DueAt || tx.dueAt
+  if (!dueAt) return ''
+  const now = new Date()
+  const due = new Date(dueAt)
+  if (Number.isNaN(due.getTime())) return ''
+  if (due.getTime() >= now.getTime()) {
+    return `Còn ${formatDuration(now, due)}`
+  }
+  return `Quá hạn ${formatDuration(due, now)}`
+}
+
+function reviewButtonText(tx) {
+  if (hasReviewed(tx)) return 'Đã đánh giá'
+  if (store.isPending(tx)) return 'Chờ duyệt mới đánh giá'
+  if (store.isReturnPending(tx)) return 'Chờ trả sách mới đánh giá'
+  return 'Đánh giá'
+}
+
+function canReview(tx) {
+  return !hasReviewed(tx) && !store.isPending(tx) && !store.isReturnPending(tx)
 }
 
 function returnButtonText(tx) {
@@ -404,8 +479,39 @@ onMounted(loadData)
   font-size: 12px;
   font-weight: 600;
 }
+.timeline-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid #f3eadb;
+  background: #fffdf8;
+}
+.timeline-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.timeline-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.timeline-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+.text-warning {
+  color: #d97706 !important;
+}
 .text-white-50 {
   color: rgba(255,255,255,0.6) !important;
+}
+.text-error {
+  color: #dc2626 !important;
 }
 </style>
 

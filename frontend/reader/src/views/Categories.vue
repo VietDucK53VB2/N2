@@ -41,7 +41,9 @@
                 size="x-small"
                 class="heart-btn"
                 :class="{ 'is-favorite': store.isFavorite(book.id) }"
-                @click.stop="store.toggleFavorite(book)"
+                type="button"
+                :ripple="false"
+                @click.stop.prevent="toggleFavorite(book, $event)"
               >
                 <v-icon size="18" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
                   {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
@@ -103,6 +105,12 @@ const filtered = computed(() => {
   if (category === 'all') return books.slice(0, 12)
   return books.filter(book => bookMatchesCategory(book, category)).slice(0, 12)
 })
+
+async function toggleFavorite(book, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  await store.toggleFavorite(book)
+}
 
 onMounted(() => store.loadBooks())
 </script>

@@ -102,7 +102,9 @@
                 size="x-small"
                 class="heart-btn"
                 :class="{ 'is-favorite': store.isFavorite(book.id) }"
-                @click.stop="store.toggleFavorite(book)"
+                type="button"
+                :ripple="false"
+                @click.stop.prevent="toggleFavorite(book, $event)"
               >
                 <v-icon size="18" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
                   {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
@@ -223,6 +225,11 @@ const popularCountMap = computed(() => {
 
 function rankColor(i) { return ['amber-darken-1', 'blue-grey', 'deep-orange'][i] || 'grey-darken-1' }
 function openDetail(book, count = 0) { selectedBook.value = book; selectedBorrowCount.value = count; detailDialog.value = true }
+async function toggleFavorite(book, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  await store.toggleFavorite(book)
+}
 function handleBorrowed(payload = {}) {
   store.loadAll()
   const quantity = payload.quantity || 1

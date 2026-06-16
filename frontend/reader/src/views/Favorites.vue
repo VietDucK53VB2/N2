@@ -17,7 +17,14 @@
           <div class="book-cover" :style="{ backgroundColor: titleColor(book.tenSach) }">
             <v-img v-if="book.imageUrl" :src="book.imageUrl" cover class="cover-img" />
             <v-icon v-else size="44" color="white" style="opacity:.35">mdi-book-open-variant</v-icon>
-            <v-btn icon size="x-small" class="heart-btn is-favorite" @click.stop="toggleFavorite(book)">
+            <v-btn
+              icon
+              size="x-small"
+              class="heart-btn is-favorite"
+              type="button"
+              :ripple="false"
+              @click.stop.prevent="toggleFavorite(book, $event)"
+            >
               <v-icon size="18" color="pink">mdi-heart</v-icon>
             </v-btn>
           </div>
@@ -48,8 +55,10 @@ import { titleColor } from '@/utils/helpers'
 const store = useAppStore()
 const favorites = computed(() => store.favorites || [])
 
-function toggleFavorite(book) {
-  store.toggleFavorite(book)
+async function toggleFavorite(book, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  await store.removeFavorite(book.id)
 }
 
 onMounted(async () => {
