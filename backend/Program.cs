@@ -237,22 +237,15 @@ app.Use(async (context, next) =>
 
     var path = context.Request.Path.Value ?? "/";
 
-    // Root → wwwroot/index.html
+    // Root should go to login so the host landing page behaves as expected.
     if (path == "/" || path == "/index.html")
     {
-        var rootIndex = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "index.html");
-        if (File.Exists(rootIndex))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(rootIndex);
-            return;
-        }
+        context.Response.Redirect("/login");
+        return;
     }
 
-    // /ui/{role}/ → wwwroot/ui/{role}/index.html
+    // /ui/{role}/ -> wwwroot/ui/{role}/index.html
+
     var segments = path.Trim('/').Split('/');
     if (segments.Length == 2)
     {
