@@ -4,6 +4,7 @@ const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
+let authBootstrapComplete = false
 
 export { ID3_API, N3_LOGIN_URL, BASE, CATALOG_API }
 
@@ -65,7 +66,7 @@ export async function authFetch(url, opts = {}) {
     ...(opts.headers || {})
   }
   const response = await fetch(url, { ...fetchOptions, headers })
-  if (redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
+  if (authBootstrapComplete && redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
     forceLogin()
   }
   return response
@@ -271,28 +272,32 @@ export function normalizeEvent(e = {}) {
 }
 
 export async function initAuth() {
-  const p = new URLSearchParams(window.location.search)
-  const t = p.get('token')
-  const code = p.get('code')
-  const c = p.get('cardNumber')
+  try {
+    const p = new URLSearchParams(window.location.search)
+    const t = p.get('token')
+    const code = p.get('code')
+    const c = p.get('cardNumber')
 
-  if (t) {
-    storeAuthToken(t, c || '')
-    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
-    return true
+    if (t) {
+      storeAuthToken(t, c || '')
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      return true
+    }
+
+    if (code) {
+      const ok = await redeemCode(code)
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      return ok
+    }
+
+    if (getToken()) return true
+
+    clearAuth()
+    window.location.href = N3_LOGIN_URL
+    return false
+  } finally {
+    authBootstrapComplete = true
   }
-
-  if (code) {
-    const ok = await redeemCode(code)
-    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
-    return ok
-  }
-
-  if (getToken()) return true
-
-  clearAuth()
-  window.location.href = N3_LOGIN_URL
-  return false
 }
 
 export function logout() {
