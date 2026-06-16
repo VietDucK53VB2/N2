@@ -130,7 +130,7 @@ const pageSub = computed(() => subs[route.name] || '')
 
 watch(() => route.name, n => { selectedKeys.value = [n || 'overview'] }, { immediate: true })
 function onMenuClick({ key }) { router.push({ name: key }) }
-function doLogout() { localStorage.clear(); window.location.href = window.location.origin + '/login' }
+function doLogout() { localStorage.clear(); window.location.href = window.location.origin.replace(/:\d+$/, '') + '/login' }
 </script>
 
 <style scoped>

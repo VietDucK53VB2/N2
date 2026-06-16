@@ -1,9 +1,10 @@
 const ID3_API = `${window.location.origin.replace(/:\d+$/, ':5001')}`
-const N3_LOGIN_URL = `${window.location.origin}/login`
+const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, '')}/login`
 const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
+let authBootstrapComplete = false
 
 export { ID3_API, N3_LOGIN_URL, BASE, CATALOG_API }
 
@@ -30,6 +31,44 @@ export function parseJwt(token) {
   } catch { return null }
 }
 
+function extractRoleFromPayload(payload = {}) {
+  const role =
+    payload.role ||
+    payload.Role ||
+    payload.roles?.[0] ||
+    payload.Roles?.[0] ||
+    payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role'] ||
+    ''
+  return Array.isArray(role) ? role[0] || '' : String(role || '')
+}
+
+function saveAuthSession(token, cardNumber = '') {
+  if (!token) return false
+  const payload = parseJwt(token) || {}
+  const role = extractRoleFromPayload(payload)
+  const username =
+    payload.username ||
+    payload.Username ||
+    payload.preferred_username ||
+    payload.name ||
+    payload.unique_name ||
+    ''
+
+  localStorage.setItem('authToken', token)
+  localStorage.setItem('token', token)
+  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  if (role) localStorage.setItem('role', role)
+  const cached = getCachedUserInfo()
+  localStorage.setItem('userInfo', JSON.stringify({
+    ...cached,
+    username: cached.username || username,
+    role: cached.role || role,
+    cardNumber: cached.cardNumber || cardNumber || '',
+  }))
+  return true
+}
+
 export function getTokenPayload() {
   const t = getToken()
   return t ? parseJwt(t) : null
@@ -40,18 +79,11 @@ export function forceLogin() {
   window.location.href = N3_LOGIN_URL
 }
 
-function storeAuthToken(token, cardNumber = '') {
-  if (!token) return false
-  localStorage.setItem('authToken', token)
-  localStorage.setItem('token', token)
-  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
-  return true
-}
-
 export function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
   localStorage.removeItem('readerCard')
+  localStorage.removeItem('role')
   localStorage.removeItem('userInfo')
 }
 
@@ -65,7 +97,7 @@ export async function authFetch(url, opts = {}) {
     ...(opts.headers || {})
   }
   const response = await fetch(url, { ...fetchOptions, headers })
-  if (redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
+  if (authBootstrapComplete && redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
     forceLogin()
   }
   return response
@@ -107,7 +139,7 @@ async function redeemCode(code) {
     payload?.user?.CardNumber ||
     ''
 
-  return storeAuthToken(token, cardNumber)
+  return saveAuthSession(token, cardNumber)
 }
 
 async function authFetchWithFallback(path, opts = {}) {
@@ -271,24 +303,32 @@ export function normalizeEvent(e = {}) {
 }
 
 export async function initAuth() {
-  const p = new URLSearchParams(window.location.search)
-  const t = p.get('token')
-  const code = p.get('code')
-  const c = p.get('cardNumber')
+  try {
+    const p = new URLSearchParams(window.location.search)
+    const t = p.get('token')
+    const code = p.get('code')
+    const c = p.get('cardNumber')
 
-  if (t) {
-    storeAuthToken(t, c || '')
-    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
-    return true
+    if (t) {
+      saveAuthSession(t, c || '')
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      return true
+    }
+
+    if (code) {
+      const ok = await redeemCode(code)
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      return ok
+    }
+
+    if (getToken()) return true
+
+    clearAuth()
+    window.location.href = N3_LOGIN_URL
+    return false
+  } finally {
+    authBootstrapComplete = true
   }
-
-  if (code) {
-    const ok = await redeemCode(code)
-    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
-    return ok
-  }
-
-  return Boolean(getToken())
 }
 
 export function logout() {

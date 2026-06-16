@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { getCachedUserInfo } from '@/utils/api'
 
 const routes = [
   // Reader routes
@@ -32,6 +33,15 @@ const routes = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes
+})
+
+router.beforeEach((to, from, next) => {
+  const role = String(getCachedUserInfo().role || localStorage.getItem('role') || '').toLowerCase()
+  if (to.path.startsWith('/librarian') && role !== 'librarian') {
+    next({ name: 'dashboard' })
+    return
+  }
+  next()
 })
 
 export default router

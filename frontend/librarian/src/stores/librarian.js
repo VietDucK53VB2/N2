@@ -9,10 +9,35 @@ function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
 }
 
+function parseJwt(token) {
+  try {
+    const b = token.split('.')[1]
+    return JSON.parse(decodeURIComponent(
+      atob(b.replace(/-/g, '+').replace(/_/g, '/'))
+        .split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    ))
+  } catch {
+    return null
+  }
+}
+
+function extractRoleFromPayload(payload = {}) {
+  const role =
+    payload.role ||
+    payload.Role ||
+    payload.roles?.[0] ||
+    payload.Roles?.[0] ||
+    payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role'] ||
+    ''
+  return Array.isArray(role) ? role[0] || '' : String(role || '')
+}
+
 function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
   localStorage.removeItem('readerCard')
+  localStorage.removeItem('role')
   localStorage.removeItem('userInfo')
 }
 
@@ -23,9 +48,26 @@ function forceLogin() {
 
 function storeAuthToken(token, cardNumber = '') {
   if (!token) return false
+  const payload = parseJwt(token) || {}
+  const role = extractRoleFromPayload(payload)
+  const username =
+    payload.username ||
+    payload.Username ||
+    payload.preferred_username ||
+    payload.name ||
+    payload.unique_name ||
+    ''
   localStorage.setItem('authToken', token)
   localStorage.setItem('token', token)
   if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  if (role) localStorage.setItem('role', role)
+  const cached = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  localStorage.setItem('userInfo', JSON.stringify({
+    ...cached,
+    username: cached.username || username,
+    role: cached.role || role,
+    cardNumber: cached.cardNumber || cardNumber || '',
+  }))
   return true
 }
 
