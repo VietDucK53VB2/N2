@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
 const N3_LOGIN_URL = `${window.location.origin}/login`
+const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 
 function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
@@ -18,6 +19,14 @@ function clearAuth() {
 function forceLogin() {
   clearAuth()
   window.location.href = N3_LOGIN_URL
+}
+
+function storeAuthToken(token, cardNumber = '') {
+  if (!token) return false
+  localStorage.setItem('authToken', token)
+  localStorage.setItem('token', token)
+  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  return true
 }
 
 function statusOf(transaction = {}) {
@@ -59,8 +68,67 @@ function bookIdOf(transaction = {}) {
 async function apiFetch(url, opts = {}) {
   const t = getToken()
   const response = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(opts.headers || {}) } })
-  if (response.status === 401 || response.status === 403) forceLogin()
   return response
+}
+
+async function redeemCode(code) {
+  const response = await fetch(HANDOFF_REDEEM_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  })
+
+  if (!response.ok) return false
+
+  const raw = (await response.text()).trim()
+  let payload = null
+
+  try {
+    payload = raw ? JSON.parse(raw) : null
+  } catch {
+    payload = raw ? { token: raw } : null
+  }
+
+  const token =
+    payload?.token ||
+    payload?.Token ||
+    payload?.accessToken ||
+    payload?.AccessToken ||
+    payload?.jwt ||
+    payload?.Jwt ||
+    (typeof payload === 'string' ? payload : '')
+
+  const cardNumber =
+    payload?.cardNumber ||
+    payload?.CardNumber ||
+    payload?.readerCardNumber ||
+    payload?.ReaderCardNumber ||
+    payload?.user?.cardNumber ||
+    payload?.user?.CardNumber ||
+    ''
+
+  return storeAuthToken(token, cardNumber)
+}
+
+export async function initAuth() {
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('token')
+  const code = params.get('code')
+  const cardNumber = params.get('cardNumber')
+
+  if (token) {
+    storeAuthToken(token, cardNumber || '')
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    return true
+  }
+
+  if (code) {
+    const ok = await redeemCode(code)
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    return ok
+  }
+
+  return Boolean(getToken())
 }
 
 function promptRejectReason(defaultReason = '') {

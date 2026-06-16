@@ -6,7 +6,15 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { useLibrarianStore } from './stores/librarian'
+import { initAuth, useLibrarianStore } from './stores/librarian'
 const store = useLibrarianStore()
-onMounted(() => store.loadAll())
+
+function hasToken() {
+  return Boolean(localStorage.getItem('authToken') || localStorage.getItem('token'))
+}
+
+onMounted(async () => {
+  await initAuth()
+  if (hasToken()) await store.loadAll()
+})
 </script>
