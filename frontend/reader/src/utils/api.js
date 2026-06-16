@@ -173,7 +173,9 @@ export async function authFetch(url, opts = {}) {
     ...(opts.headers || {})
   }
   const response = await fetch(url, { ...fetchOptions, headers })
-  if (authBootstrapComplete && redirectOnAuthError && t && (response.status === 401 || response.status === 403)) {
+  // Only treat 401 as a broken session. Some reader endpoints can legally return 403
+  // for forbidden aggregate data, and that should not bounce the user back to login.
+  if (authBootstrapComplete && redirectOnAuthError && t && response.status === 401) {
     forceLogin()
   }
   return response
@@ -270,7 +272,7 @@ export async function fetchTransactions(cardNumber) {
 
 export async function fetchAllTransactions() {
   try {
-    const r = await authFetchWithFallback('/transactions?pageSize=200')
+    const r = await authFetchWithFallback('/transactions?pageSize=200', { redirectOnAuthError: false })
     if (!r.ok) return []
     return await r.json()
   } catch { return [] }
