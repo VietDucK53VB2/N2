@@ -3,6 +3,7 @@ const N3_LOGIN_URL = `${window.location.origin}/login`
 const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
+const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 
 export { ID3_API, N3_LOGIN_URL, BASE, CATALOG_API }
 
@@ -39,6 +40,14 @@ export function forceLogin() {
   window.location.href = N3_LOGIN_URL
 }
 
+function storeAuthToken(token, cardNumber = '') {
+  if (!token) return false
+  localStorage.setItem('authToken', token)
+  localStorage.setItem('token', token)
+  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  return true
+}
+
 export function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
@@ -60,6 +69,45 @@ export async function authFetch(url, opts = {}) {
     forceLogin()
   }
   return response
+}
+
+async function redeemCode(code) {
+  const response = await fetch(HANDOFF_REDEEM_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  })
+
+  if (!response.ok) return false
+
+  const raw = (await response.text()).trim()
+  let payload = null
+
+  try {
+    payload = raw ? JSON.parse(raw) : null
+  } catch {
+    payload = raw ? { token: raw } : null
+  }
+
+  const token =
+    payload?.token ||
+    payload?.Token ||
+    payload?.accessToken ||
+    payload?.AccessToken ||
+    payload?.jwt ||
+    payload?.Jwt ||
+    (typeof payload === 'string' ? payload : '')
+
+  const cardNumber =
+    payload?.cardNumber ||
+    payload?.CardNumber ||
+    payload?.readerCardNumber ||
+    payload?.ReaderCardNumber ||
+    payload?.user?.cardNumber ||
+    payload?.user?.CardNumber ||
+    ''
+
+  return storeAuthToken(token, cardNumber)
 }
 
 async function authFetchWithFallback(path, opts = {}) {
@@ -222,16 +270,25 @@ export function normalizeEvent(e = {}) {
   }
 }
 
-export function initAuth() {
+export async function initAuth() {
   const p = new URLSearchParams(window.location.search)
   const t = p.get('token')
+  const code = p.get('code')
   const c = p.get('cardNumber')
+
   if (t) {
-    localStorage.setItem('authToken', t)
-    localStorage.setItem('token', t)
-    if (c) localStorage.setItem('readerCard', c)
-    window.history.replaceState({}, '', window.location.pathname)
+    storeAuthToken(t, c || '')
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    return true
   }
+
+  if (code) {
+    const ok = await redeemCode(code)
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    return ok
+  }
+
+  return Boolean(getToken())
 }
 
 export function logout() {
