@@ -218,10 +218,10 @@ export const useAppStore = defineStore('app', () => {
       await loadBooks()
       await Promise.all([
         loadMyTransactions(),
-        loadAllTransactions(),
-        loadEvents(),
-        loadFines()
+        loadAllTransactions()
       ])
+      events.value = []
+      fines.value = []
     } finally {
       loading.value = false
     }

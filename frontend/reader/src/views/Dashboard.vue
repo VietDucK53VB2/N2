@@ -156,7 +156,12 @@ const categoryKeywords = {
 }
 
 const currentDate = computed(() => dayjs().format('dddd, D [tháng] M, YYYY'))
-const firstName = computed(() => (store.userInfo?.fullName || 'Độc giả').split(' ').pop())
+const firstName = computed(() => {
+  const info = store.userInfo || {}
+  const candidate = info.fullName || info.username || info.cardNumber || 'Độc giả'
+  const parts = String(candidate).trim().split(/\s+/).filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : candidate
+})
 const booksFirst = computed(() => activeCategory.value !== 'all')
 
 const heroStats = computed(() => [

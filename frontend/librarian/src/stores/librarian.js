@@ -33,6 +33,86 @@ function extractRoleFromPayload(payload = {}) {
   return Array.isArray(role) ? role[0] || '' : String(role || '')
 }
 
+function extractFirstNonEmpty(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const text = String(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function isGenericDisplayName(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return [
+    'độc giả',
+    'reader',
+    'thủ thư',
+    'librarian',
+    'thành viên',
+    'bạn',
+    'guest',
+    'user',
+    'admin',
+    'quản trị viên'
+  ].includes(normalized)
+}
+
+function extractDisplayNameFromPayload(payload = {}, fallback = '') {
+  const givenName = extractFirstNonEmpty(
+    payload.given_name,
+    payload.givenName,
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name']
+  )
+  const familyName = extractFirstNonEmpty(
+    payload.family_name,
+    payload.familyName,
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
+    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/family_name']
+  )
+
+  const candidates = [
+    payload.fullName,
+    payload.FullName,
+    [givenName, familyName].filter(Boolean).join(' ').trim(),
+    payload.name,
+    payload.Name,
+    payload.unique_name,
+    payload.uniqueName,
+    payload.preferred_username,
+    payload.preferredUsername,
+    payload.username,
+    payload.Username,
+    payload.sub,
+    payload.Subject,
+    fallback
+  ]
+
+  for (const candidate of candidates) {
+    const text = extractFirstNonEmpty(candidate)
+    if (text && !isGenericDisplayName(text)) return text
+  }
+
+  return extractFirstNonEmpty(fallback)
+}
+
+function extractCardNumberFromPayload(payload = {}, fallback = '') {
+  return extractFirstNonEmpty(
+    payload.cardNumber,
+    payload.CardNumber,
+    payload.readerCardNumber,
+    payload.ReaderCardNumber,
+    payload.libraryCardNumber,
+    payload.LibraryCardNumber,
+    payload.libraryCard?.cardNumber,
+    payload.libraryCard?.CardNumber,
+    payload.user?.cardNumber,
+    payload.user?.CardNumber,
+    fallback
+  )
+}
+
 function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
@@ -50,23 +130,19 @@ function storeAuthToken(token, cardNumber = '') {
   if (!token) return false
   const payload = parseJwt(token) || {}
   const role = extractRoleFromPayload(payload)
-  const username =
-    payload.username ||
-    payload.Username ||
-    payload.preferred_username ||
-    payload.name ||
-    payload.unique_name ||
-    ''
+  const username = extractDisplayNameFromPayload(payload, '')
+  const normalizedCardNumber = extractCardNumberFromPayload(payload, cardNumber)
   localStorage.setItem('authToken', token)
   localStorage.setItem('token', token)
-  if (cardNumber) localStorage.setItem('readerCard', cardNumber)
+  if (normalizedCardNumber) localStorage.setItem('readerCard', normalizedCardNumber)
   if (role) localStorage.setItem('role', role)
   const cached = JSON.parse(localStorage.getItem('userInfo') || '{}')
   localStorage.setItem('userInfo', JSON.stringify({
     ...cached,
-    username: cached.username || username,
+    fullName: extractDisplayNameFromPayload(cached, username || normalizedCardNumber),
+    username: cached.username || username || normalizedCardNumber,
     role: cached.role || role,
-    cardNumber: cached.cardNumber || cardNumber || '',
+    cardNumber: cached.cardNumber || normalizedCardNumber || '',
   }))
   return true
 }

@@ -235,7 +235,7 @@ async function payAllFines() {
         return
       }
     }
-    await store.loadFines()
+    await store.loadAll()
     showMessage('Đã thanh toán phí phạt.')
   } catch {
     showMessage('Không kết nối được máy chủ. Vui lòng thử lại.', 'error')
