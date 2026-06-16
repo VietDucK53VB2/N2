@@ -88,7 +88,11 @@ const searchText = ref('')
 const userInfo = computed(() => getCachedUserInfo())
 const initials = computed(() => getInitials(userInfo.value.fullName))
 
-const greeting = computed(() => `Xin chào, ${(userInfo.value.fullName || 'Thủ thư').split(' ').pop()}!`)
+const greeting = computed(() => {
+  const candidate = userInfo.value.fullName || userInfo.value.username || userInfo.value.cardNumber || 'Thủ thư'
+  const parts = String(candidate).trim().split(/\s+/).filter(Boolean)
+  return `Xin chào, ${parts.length ? parts[parts.length - 1] : candidate}!`
+})
 const subtitle = computed(() => 'Quản lý thư viện hiệu quả mỗi ngày')
 
 const navItems = computed(() => [

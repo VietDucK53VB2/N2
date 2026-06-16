@@ -130,7 +130,7 @@ const submitting = ref(false)
 const items = computed(() => store.cartItems)
 const userName = computed(() => {
   const info = store.userInfo || {}
-  return info.fullName || info.FullName || info.name || info.Name || 'bạn'
+  return info.fullName || info.FullName || info.username || info.name || info.Name || info.cardNumber || 'bạn'
 })
 const totalQuantity = computed(() => items.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
 const totalPrice = computed(() => items.value.reduce((sum, item) => sum + lineTotal(item), 0))
