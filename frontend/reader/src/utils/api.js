@@ -288,7 +288,11 @@ export async function initAuth() {
     return ok
   }
 
-  return Boolean(getToken())
+  if (getToken()) return true
+
+  clearAuth()
+  window.location.href = N3_LOGIN_URL
+  return false
 }
 
 export function logout() {
