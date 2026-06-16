@@ -1,8 +1,6 @@
 <template>
   <v-layout>
-    <!-- Sidebar -->
     <v-navigation-drawer v-model="drawer" permanent width="240" elevation="0" class="lib-sidebar">
-      <!-- Brand -->
       <div class="brand-area">
         <span class="brand-icon">📚</span>
         <span class="brand-text">SmartLib</span>
@@ -38,34 +36,38 @@
       </template>
     </v-navigation-drawer>
 
-    <!-- Main area -->
     <v-main class="lib-main">
-      <!-- Top bar -->
       <div class="lib-topbar">
-        <div>
-          <h2 class="topbar-title">{{ greeting }}</h2>
-          <p class="topbar-sub">{{ subtitle }}</p>
+        <div class="lib-topbar__greeting">
+          <h2 class="topbar-title">Welcome {{ displayName }} !</h2>
         </div>
-        <v-spacer />
-        <v-text-field
-          v-model="searchText"
-          prepend-inner-icon="mdi-magnify"
-          placeholder="Tìm kiếm..."
-          hide-details
-          density="compact"
-          variant="solo-filled"
-          flat
-          rounded="lg"
-          class="topbar-search"
-          style="max-width:280px"
-        />
-        <v-badge :content="libStore.pendingCount" :model-value="libStore.pendingCount > 0" color="error" overlap>
-          <v-btn icon="mdi-bell-outline" variant="text" class="ml-3" />
-        </v-badge>
-        <v-avatar size="36" class="ml-3 topbar-avatar">{{ initials }}</v-avatar>
+
+        <div class="lib-topbar__actions">
+          <v-text-field
+            v-model="searchText"
+            prepend-inner-icon="mdi-magnify"
+            placeholder="Tìm kiếm độc giả, thẻ..."
+            hide-details
+            density="compact"
+            variant="solo-filled"
+            flat
+            rounded="lg"
+            class="topbar-search"
+            clearable
+          />
+
+          <v-btn icon variant="text" class="topbar-action">
+            <v-badge :content="libStore.pendingCount" :model-value="libStore.pendingCount > 0" color="error" offset-x="2" offset-y="2">
+              <v-icon size="20">mdi-bell-outline</v-icon>
+            </v-badge>
+          </v-btn>
+
+          <v-avatar size="40" class="topbar-avatar" :image="avatarUrl || undefined">
+            <span v-if="!avatarUrl">{{ initials }}</span>
+          </v-avatar>
+        </div>
       </div>
 
-      <!-- Content -->
       <v-container fluid class="pa-6">
         <router-view />
       </v-container>
@@ -90,13 +92,7 @@ const searchText = ref('')
 const userInfo = computed(() => appStore.userInfo || getCachedUserInfo())
 const displayName = computed(() => getDisplayName(userInfo.value, 'Thủ thư'))
 const initials = computed(() => getInitials(displayName.value))
-
-const greeting = computed(() => {
-  const candidate = displayName.value
-  const parts = String(candidate).trim().split(/\s+/).filter(Boolean)
-  return `Xin chào, ${parts.length ? parts[parts.length - 1] : candidate}!`
-})
-const subtitle = computed(() => 'Quản lý thư viện hiệu quả mỗi ngày')
+const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
 
 const navItems = computed(() => [
   { title: 'Dashboard', icon: 'mdi-view-dashboard', route: 'lib-overview' },
@@ -106,7 +102,9 @@ const navItems = computed(() => [
   { title: 'Phí phạt', icon: 'mdi-cash-multiple', route: 'lib-fines' }
 ])
 
-function handleLogout() { logout() }
+function handleLogout() {
+  logout()
+}
 </script>
 
 <style scoped lang="scss">
@@ -155,26 +153,56 @@ function handleLogout() { logout() }
 .lib-topbar {
   display: flex;
   align-items: center;
-  padding: 20px 28px;
-  background: transparent;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 72px;
+  padding: 18px 28px;
+  background: #fff;
+  border-bottom: 1px solid #edf0ea;
+  box-shadow: 0 1px 8px rgba(15, 23, 42, 0.04);
+}
+
+.lib-topbar__greeting {
+  min-width: 0;
 }
 
 .topbar-title {
-  font-size: 22px;
-  font-weight: 800;
-  color: #1e1b4b;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
   margin: 0;
+  white-space: nowrap;
 }
 
-.topbar-sub {
-  font-size: 13px;
-  color: #94a3b8;
-  margin: 2px 0 0;
+.lib-topbar__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .topbar-search {
-  background: #fff;
-  border-radius: 12px;
+  width: min(42vw, 280px);
+  min-width: 220px;
+}
+
+.topbar-search :deep(.v-field) {
+  border-radius: 14px;
+  background: #f7f5ef;
+  box-shadow: inset 0 0 0 1px #e7e3d7;
+}
+
+.topbar-search :deep(.v-field__outline) {
+  display: none;
+}
+
+.topbar-action {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px !important;
+  background: #f7f7f4;
+  border: 1px solid #e7e3d7;
+  color: #334155;
 }
 
 .topbar-avatar {
