@@ -401,9 +401,10 @@ export function normalizeBook(b = {}) {
   const soBanConLai = Number(b.soBanConLai ?? b.SoBanConLai ?? Math.max(soLuong - soBanDaMuon, 0))
   const moTa = b.moTa ?? b.MoTa ?? b.description ?? b.Description ?? ''
   const giaMuon = Number(b.giaMuon ?? b.GiaMuon ?? b.giaThue ?? b.GiaThue ?? b.price ?? b.Price ?? b.donGia ?? b.DonGia ?? 0)
+  const theLoai = b.theLoai ?? b.TheLoai ?? b.genre ?? b.Genre ?? b.category ?? b.Category ?? ''
 
   return {
-    id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn,
+    id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn, theLoai,
     soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon
   }
 }

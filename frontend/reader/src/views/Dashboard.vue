@@ -48,7 +48,7 @@
       </div>
 
       <v-row v-if="store.activeTransactions.length" class="mb-8">
-        <v-col v-for="(tx, idx) in store.activeTransactions.slice(0, 4)" :key="tx.Id || tx.id" cols="6" sm="4" md="3">
+        <v-col v-for="(tx, idx) in store.activeTransactions.slice(0, 4)" :key="tx.Id || tx.id" cols="6" sm="4" md="3" lg="2">
           <v-card class="book-card" :style="{ animationDelay: idx * 80 + 'ms' }" hover @click="$router.push('/mybooks')">
             <div class="book-cover" :style="{ backgroundColor: titleColor(tx.TenSach || tx.tenSach) }">
               <v-img v-if="tx.ImageUrl || tx.imageUrl" :src="tx.ImageUrl || tx.imageUrl" cover class="cover-img" />
@@ -128,7 +128,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { titleColor, formatMoney, daysLeft } from '@/utils/helpers'
+import { titleColor, formatMoney, daysLeft, getDisplayName } from '@/utils/helpers'
 import BookDetailDialog from '@/components/BookDetailDialog.vue'
 import dayjs from 'dayjs'
 import 'dayjs/locale/vi'
@@ -157,8 +157,7 @@ const categoryKeywords = {
 
 const currentDate = computed(() => dayjs().format('dddd, D [tháng] M, YYYY'))
 const firstName = computed(() => {
-  const info = store.userInfo || {}
-  const candidate = info.fullName || info.username || info.cardNumber || 'Độc giả'
+  const candidate = getDisplayName(store.userInfo || {}, 'Độc giả')
   const parts = String(candidate).trim().split(/\s+/).filter(Boolean)
   return parts.length ? parts[parts.length - 1] : candidate
 })

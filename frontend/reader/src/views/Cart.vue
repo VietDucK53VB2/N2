@@ -122,16 +122,13 @@
 <script setup>
 import { computed, onMounted, watch, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { formatMoney } from '@/utils/helpers'
+import { formatMoney, getDisplayName } from '@/utils/helpers'
 
 const store = useAppStore()
 const submitting = ref(false)
 
 const items = computed(() => store.cartItems)
-const userName = computed(() => {
-  const info = store.userInfo || {}
-  return info.fullName || info.FullName || info.username || info.name || info.Name || info.cardNumber || 'bạn'
-})
+const userName = computed(() => getDisplayName(store.userInfo || {}, 'b?n'))
 const totalQuantity = computed(() => items.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
 const totalPrice = computed(() => items.value.reduce((sum, item) => sum + lineTotal(item), 0))
 const remainingInMonth = computed(() => Math.max(0, 10 - totalQuantity.value))

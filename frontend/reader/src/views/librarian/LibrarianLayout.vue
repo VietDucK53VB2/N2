@@ -76,20 +76,23 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAppStore } from '@/stores/app'
 import { useLibrarianStore } from '@/stores/librarian'
 import { getCachedUserInfo, logout } from '@/utils/api'
-import { getInitials } from '@/utils/helpers'
+import { getInitials, getDisplayName } from '@/utils/helpers'
 
 const route = useRoute()
+const appStore = useAppStore()
 const libStore = useLibrarianStore()
 const drawer = ref(true)
 const searchText = ref('')
 
-const userInfo = computed(() => getCachedUserInfo())
-const initials = computed(() => getInitials(userInfo.value.fullName))
+const userInfo = computed(() => appStore.userInfo || getCachedUserInfo())
+const displayName = computed(() => getDisplayName(userInfo.value, 'Thủ thư'))
+const initials = computed(() => getInitials(displayName.value))
 
 const greeting = computed(() => {
-  const candidate = userInfo.value.fullName || userInfo.value.username || userInfo.value.cardNumber || 'Thủ thư'
+  const candidate = displayName.value
   const parts = String(candidate).trim().split(/\s+/).filter(Boolean)
   return `Xin chào, ${parts.length ? parts[parts.length - 1] : candidate}!`
 })

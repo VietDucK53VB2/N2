@@ -233,9 +233,54 @@ export const useAppStore = defineStore('app', () => {
   async function loadUserInfo() {
     const info = await loadProfile()
     const cached = getCachedUserInfo()
+    const readerCard = localStorage.getItem('readerCard') || ''
     userInfo.value = {
       ...cached,
       ...info,
+      fullName:
+        info?.fullName ||
+        info?.FullName ||
+        cached?.fullName ||
+        cached?.FullName ||
+        cached?.username ||
+        readerCard ||
+        userInfo.value?.fullName ||
+        'Độc giả',
+      username:
+        info?.username ||
+        info?.Username ||
+        cached?.username ||
+        cached?.Username ||
+        readerCard ||
+        userInfo.value?.username ||
+        '',
+      role:
+        info?.role ||
+        info?.Role ||
+        cached?.role ||
+        cached?.Role ||
+        localStorage.getItem('role') ||
+        userInfo.value?.role ||
+        'Reader',
+      cardNumber:
+        info?.cardNumber ||
+        info?.CardNumber ||
+        cached?.cardNumber ||
+        cached?.CardNumber ||
+        readerCard ||
+        '',
+      email:
+        info?.email ||
+        info?.Email ||
+        cached?.email ||
+        cached?.Email ||
+        '',
+      createdAt:
+        info?.createdAt ||
+        info?.CreatedAt ||
+        cached?.createdAt ||
+        cached?.CreatedAt ||
+        '',
       avatarUrl: info?.avatarUrl || info?.AvatarUrl || cached?.avatarUrl || cached?.AvatarUrl || cached?.avatar || cached?.Avatar || ''
     }
     return info

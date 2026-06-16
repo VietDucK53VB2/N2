@@ -10,9 +10,15 @@
       </div>
 
       <v-chip-group v-model="selected" selected-class="active-chip" class="hero-chips" mandatory>
-        <v-chip value="all" variant="elevated" filter>Tất cả</v-chip>
-        <v-chip value="vanhoc" variant="elevated" filter>Văn học</v-chip>
-        <v-chip value="khoahoc" variant="elevated" filter>Khoa học</v-chip>
+        <v-chip
+          v-for="cat in categoryChips"
+          :key="cat.value"
+          :value="cat.value"
+          variant="elevated"
+          filter
+        >
+          {{ cat.label }}
+        </v-chip>
       </v-chip-group>
     </section>
 
@@ -25,7 +31,7 @@
       </div>
 
       <v-row>
-        <v-col v-for="book in filtered" :key="book.id" cols="12" sm="6" md="4" lg="3">
+        <v-col v-for="book in filtered" :key="book.id" cols="6" sm="4" md="3" lg="2">
           <v-card class="book-card" rounded="xl" elevation="2" hover @click="$router.push({ name: 'dashboard', query: { q: book.tenSach } })">
             <div class="book-cover" :style="{ backgroundColor: titleColor(book.tenSach) }">
               <v-img v-if="book.imageUrl" :src="book.imageUrl" cover class="cover-img" />
@@ -35,7 +41,9 @@
               <p class="book-title">{{ book.tenSach }}</p>
               <p class="book-author">{{ book.tacGia }}</p>
               <div class="book-meta">
-                <v-chip size="x-small" color="primary" variant="tonal">Còn {{ book.soBanConLai ?? '—' }}</v-chip>
+                <v-chip size="x-small" color="primary" variant="tonal">
+                  Còn {{ book.soBanConLai ?? '—' }}
+                </v-chip>
               </div>
             </v-card-text>
           </v-card>
@@ -49,27 +57,40 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
-import { titleColor } from '@/utils/helpers'
+import { titleColor, buildCatalogCategories, bookMatchesCategory } from '@/utils/helpers'
 
 const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
-const selected = ref(route.params.category || 'all')
+const selected = ref(String(route.params.category || 'all'))
 
-watch(() => route.params.category, v => { selected.value = v || 'all' }, { immediate: true })
-watch(selected, v => {
-  if (route.params.category !== v) router.replace({ name: 'categories', params: { category: v } })
+watch(
+  () => route.params.category,
+  value => {
+    selected.value = String(value || 'all')
+  },
+  { immediate: true }
+)
+
+watch(selected, value => {
+  if (String(route.params.category || 'all') !== String(value || 'all')) {
+    router.replace({ name: 'categories', params: { category: value } })
+  }
+})
+
+const categoryChips = computed(() => {
+  const books = Array.isArray(store.books) ? store.books : []
+  return [
+    { label: 'Tất cả', value: 'all' },
+    ...buildCatalogCategories(books)
+  ]
 })
 
 const filtered = computed(() => {
-  const q = String(selected.value || 'all')
-  if (q === 'all') return store.books.slice(0, 12)
-  const key = q === 'vanhoc'
-    ? ['văn', 'thơ', 'truyện', 'tiểu thuyết']
-    : ['khoa học', 'science', 'vật lý']
-  return store.books
-    .filter(b => key.some(k => String(b.tenSach || '').toLowerCase().includes(k)))
-    .slice(0, 12)
+  const category = String(selected.value || 'all')
+  const books = Array.isArray(store.books) ? store.books : []
+  if (category === 'all') return books.slice(0, 12)
+  return books.filter(book => bookMatchesCategory(book, category)).slice(0, 12)
 })
 
 onMounted(() => store.loadBooks())
@@ -90,9 +111,7 @@ onMounted(() => store.loadBooks())
   box-shadow: 0 14px 30px rgba(6, 78, 59, 0.18);
 }
 
-.hero-copy {
-  margin-bottom: 18px;
-}
+.hero-copy { margin-bottom: 18px; }
 
 .eyebrow {
   margin: 0 0 6px;
@@ -118,9 +137,7 @@ onMounted(() => store.loadBooks())
   max-width: 720px;
 }
 
-.hero-chips {
-  gap: 10px;
-}
+.hero-chips { gap: 10px; flex-wrap: wrap; }
 
 :deep(.hero-chips .v-chip) {
   background: rgba(255, 255, 255, 0.14) !important;
@@ -154,9 +171,7 @@ onMounted(() => store.loadBooks())
   color: #0f172a;
 }
 
-.panel-subtitle {
-  color: #64748b;
-}
+.panel-subtitle { color: #64748b; }
 
 .book-card {
   overflow: hidden;
