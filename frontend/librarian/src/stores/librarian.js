@@ -59,33 +59,34 @@ function isGenericDisplayName(value) {
 }
 
 function extractDisplayNameFromPayload(payload = {}, fallback = '') {
+  const source = payload && typeof payload === 'object' ? payload : {}
   const givenName = extractFirstNonEmpty(
-    payload.given_name,
-    payload.givenName,
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name']
+    source.given_name,
+    source.givenName,
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name']
   )
   const familyName = extractFirstNonEmpty(
-    payload.family_name,
-    payload.familyName,
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/family_name']
+    source.family_name,
+    source.familyName,
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/family_name']
   )
 
   const candidates = [
-    payload.fullName,
-    payload.FullName,
+    source.fullName,
+    source.FullName,
     [givenName, familyName].filter(Boolean).join(' ').trim(),
-    payload.name,
-    payload.Name,
-    payload.unique_name,
-    payload.uniqueName,
-    payload.preferred_username,
-    payload.preferredUsername,
-    payload.username,
-    payload.Username,
-    payload.sub,
-    payload.Subject,
+    source.name,
+    source.Name,
+    source.unique_name,
+    source.uniqueName,
+    source.preferred_username,
+    source.preferredUsername,
+    source.username,
+    source.Username,
+    source.sub,
+    source.Subject,
     fallback
   ]
 
@@ -98,17 +99,18 @@ function extractDisplayNameFromPayload(payload = {}, fallback = '') {
 }
 
 function extractCardNumberFromPayload(payload = {}, fallback = '') {
+  const source = payload && typeof payload === 'object' ? payload : {}
   return extractFirstNonEmpty(
-    payload.cardNumber,
-    payload.CardNumber,
-    payload.readerCardNumber,
-    payload.ReaderCardNumber,
-    payload.libraryCardNumber,
-    payload.LibraryCardNumber,
-    payload.libraryCard?.cardNumber,
-    payload.libraryCard?.CardNumber,
-    payload.user?.cardNumber,
-    payload.user?.CardNumber,
+    source.cardNumber,
+    source.CardNumber,
+    source.readerCardNumber,
+    source.ReaderCardNumber,
+    source.libraryCardNumber,
+    source.LibraryCardNumber,
+    source.libraryCard?.cardNumber,
+    source.libraryCard?.CardNumber,
+    source.user?.cardNumber,
+    source.user?.CardNumber,
     fallback
   )
 }
