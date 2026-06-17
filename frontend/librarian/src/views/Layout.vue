@@ -67,7 +67,7 @@
             <MenuFoldOutlined v-else />
           </a-button>
           <div class="header-info">
-            <h3 class="header-title">Chào mừng {{ displayName }}!</h3>
+            <h3 class="header-title">Chào mừng {{ loginName }}!</h3>
             <p v-if="pageSub" class="header-subtitle">{{ pageSub }}</p>
           </div>
         </div>
@@ -79,19 +79,50 @@
             size="middle"
             class="header-search"
           />
-          <a-button type="text" shape="circle" size="large" class="topbar-action">
-            <SettingOutlined />
-          </a-button>
-          <a-badge :count="store.pendingTx.length" :offset="[-4, 4]">
+          <a-dropdown trigger="click" :menu="{ items: settingsMenuItems, onClick: onToolbarMenuClick }">
             <a-button type="text" shape="circle" size="large" class="topbar-action">
-              <BellOutlined />
+              <SettingOutlined />
             </a-button>
-          </a-badge>
+          </a-dropdown>
+          <a-popover
+            trigger="click"
+            placement="bottomRight"
+            overlay-class-name="notifications-popover"
+          >
+            <template #content>
+              <div class="popover-panel">
+                <div class="popover-head">
+                  <div>
+                    <div class="popover-title">Thông báo nhanh</div>
+                    <div class="popover-subtitle">{{ store.pendingTx.length }} phiếu đang chờ xử lý</div>
+                  </div>
+                  <a-button type="link" size="small" @click="router.push({ name: 'loans' })">
+                    Xem phiếu mượn
+                  </a-button>
+                </div>
+                <a-empty v-if="!pendingNotices.length" description="Không có thông báo mới" />
+                <div v-else class="notice-list">
+                  <div v-for="item in pendingNotices" :key="item.key" class="notice-item">
+                    <div class="notice-badge" :class="item.variant">{{ item.variantLabel }}</div>
+                    <div class="notice-body">
+                      <div class="notice-title">{{ item.title }}</div>
+                      <div class="notice-meta">{{ item.meta }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <a-badge :count="store.pendingTx.length" :offset="[-4, 4]">
+              <a-button type="text" shape="circle" size="large" class="topbar-action">
+                <BellOutlined />
+              </a-button>
+            </a-badge>
+          </a-popover>
           <a-button class="lang-pill">EN</a-button>
           <div class="header-profile">
             <a-avatar size="40" class="header-avatar" :src="avatarUrl || undefined">{{ initials }}</a-avatar>
             <div class="profile-meta">
-              <span class="profile-name">{{ displayName }}</span>
+              <span class="profile-name">{{ loginName }}</span>
               <span class="profile-role">{{ roleLabel }}</span>
             </div>
           </div>
@@ -102,6 +133,28 @@
         <router-view />
       </a-layout-content>
     </a-layout>
+
+    <a-modal
+      v-model:open="accountModalVisible"
+      title="Thông tin tài khoản"
+      centered
+      :footer="null"
+      width="420px"
+    >
+      <div class="account-card">
+        <a-avatar size="56" class="account-avatar" :src="avatarUrl || undefined">{{ initials }}</a-avatar>
+        <div class="account-copy">
+          <div class="account-name">{{ loginName }}</div>
+          <div class="account-role">{{ roleLabel }}</div>
+        </div>
+      </div>
+
+      <a-descriptions :column="1" size="small" bordered class="account-desc">
+        <a-descriptions-item label="Tên đăng nhập">{{ loginName }}</a-descriptions-item>
+        <a-descriptions-item label="Họ và tên">{{ realName }}</a-descriptions-item>
+        <a-descriptions-item label="Vai trò">{{ roleLabel }}</a-descriptions-item>
+      </a-descriptions>
+    </a-modal>
   </a-layout>
 </template>
 
@@ -130,6 +183,7 @@ const store = useLibrarianStore()
 const collapsed = ref(false)
 const selectedKeys = ref(['overview'])
 const sessionUserInfo = ref(readSessionUserInfo())
+const accountModalVisible = ref(false)
 
 function readStoredUserInfo() {
   try {
@@ -185,14 +239,14 @@ function firstMeaningful(...values) {
 
 function extractDisplayName(info = {}) {
   return firstMeaningful(
+    info.username,
+    info.Username,
     info.fullName,
     info.FullName,
     info.displayName,
     info.DisplayName,
     info.name,
     info.Name,
-    info.username,
-    info.Username,
     info.preferred_username,
     info.preferredUsername,
     info.unique_name,
@@ -269,6 +323,31 @@ function syncSessionUser() {
 
 const userInfo = computed(() => sessionUserInfo.value)
 const displayName = computed(() => extractDisplayName(userInfo.value))
+const loginName = computed(() => {
+  return firstMeaningful(
+    userInfo.value?.username,
+    userInfo.value?.Username,
+    userInfo.value?.unique_name,
+    userInfo.value?.uniqueName,
+    userInfo.value?.preferred_username,
+    userInfo.value?.preferredUsername,
+    userInfo.value?.fullName,
+    userInfo.value?.FullName,
+    'Thủ thư'
+  ) || 'Thủ thư'
+})
+const realName = computed(() => {
+  return firstMeaningful(
+    userInfo.value?.fullName,
+    userInfo.value?.FullName,
+    userInfo.value?.displayName,
+    userInfo.value?.DisplayName,
+    userInfo.value?.name,
+    userInfo.value?.Name,
+    loginName.value,
+    'Thủ thư'
+  ) || loginName.value
+})
 const initials = computed(() => getInitialsFromName(displayName.value))
 const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
 const roleLabel = computed(() => {
@@ -300,6 +379,41 @@ watch(
 
 function onMenuClick({ key }) {
   router.push({ name: key })
+}
+
+const settingsMenuItems = computed(() => ([
+  { key: 'profile', label: 'Thông tin tài khoản' },
+  { key: 'refresh', label: 'Làm mới dữ liệu' },
+  { key: 'logout', label: 'Đăng xuất' }
+]))
+
+const pendingNotices = computed(() => {
+  return store.pendingTx.slice(0, 5).map(tx => {
+    const bookTitle = store.bookTitleOf(tx)
+    return {
+      key: tx.Id || tx.id || `${store.cardNumberOf(tx)}-${store.bookIdOf(tx)}`,
+      variant: 'warning',
+      variantLabel: 'Chờ duyệt',
+      title: `${bookTitle}`,
+      meta: `${store.cardNumberOf(tx)} · ${store.bookIdOf(tx)}`
+    }
+  })
+})
+
+async function onToolbarMenuClick({ key }) {
+  if (key === 'refresh') {
+    await store.loadAll()
+    return
+  }
+
+  if (key === 'profile') {
+    accountModalVisible.value = true
+    return
+  }
+
+  if (key === 'logout') {
+    doLogout()
+  }
 }
 
 function doLogout() {
@@ -608,6 +722,113 @@ watch(
   font-size: 11px;
   font-weight: 600;
   color: #64748b;
+}
+
+.popover-panel {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.popover-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #103b35;
+}
+
+.popover-subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #7d8a83;
+}
+
+.notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.notice-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #f8fbf8;
+  border: 1px solid #e5eee7;
+}
+
+.notice-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  height: fit-content;
+}
+
+.notice-badge.warning {
+  color: #b45309;
+  background: #fff4df;
+}
+
+.notice-body {
+  min-width: 0;
+}
+
+.notice-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #173f39;
+  line-height: 1.3;
+}
+
+.notice-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #7d8a83;
+}
+
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 16px;
+}
+
+.account-avatar {
+  background: linear-gradient(135deg, #065f46, #047857);
+  color: #fff;
+  font-weight: 800;
+}
+
+.account-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.account-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #103b35;
+}
+
+.account-role {
+  font-size: 12px;
+  color: #7d8a83;
+}
+
+.account-desc {
+  margin-top: 6px;
 }
 
 .lib-content {

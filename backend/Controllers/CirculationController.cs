@@ -1389,32 +1389,57 @@ public sealed class CirculationController : ControllerBase
 
     [HttpGet("revenue")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
-    public async Task<ActionResult> GetRevenueAsync(CancellationToken cancellationToken)
+    public async Task<ActionResult> GetRevenueAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] string? period,
+        [FromQuery] DateTime? date,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int take = 20)
     {
-        var totalBorrowRevenue = await _dbContext.RevenueRecords
+        var takeCount = Math.Clamp(take, 1, 200);
+
+        var hasWindow = TryBuildRevenueWindow(period, date, from, to, out var windowStart, out var windowEnd);
+        var revenueRecordsQuery = _dbContext.RevenueRecords
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            revenueRecordsQuery = revenueRecordsQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var totalBorrowRevenue = await revenueRecordsQuery
             .AsNoTracking()
             .Where(item => item.SourceType == "BorrowApproval")
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
-        var totalFineRevenue = await _dbContext.RevenueRecords
+        var totalFineRevenue = await revenueRecordsQuery
             .AsNoTracking()
             .Where(item => item.SourceType == "FinePayment")
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
-        var pendingFineAmount = await _dbContext.FineCharges
+        var finesQuery = _dbContext.FineCharges
             .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            finesQuery = finesQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var pendingFineAmount = await finesQuery
             .Where(item => item.PaymentStatus == "PendingApproval" && item.PaidAt == null)
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
-        var unpaidFineAmount = await _dbContext.FineCharges
-            .AsNoTracking()
+        var unpaidFineAmount = await finesQuery
             .Where(item => item.PaymentStatus == "Unpaid" && item.PaidAt == null)
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
-        var recentRevenue = await _dbContext.RevenueRecords
+        var recentRevenue = await revenueRecordsQuery
             .AsNoTracking()
             .OrderByDescending(item => item.CreatedAt)
-            .Take(20)
+            .Take(takeCount)
             .Select(item => new
             {
                 item.Id,
@@ -1435,8 +1460,8 @@ public sealed class CirculationController : ControllerBase
             totalFineRevenue,
             pendingFineAmount,
             unpaidFineAmount,
-            borrowRevenueCount = await _dbContext.RevenueRecords.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
-            fineRevenueCount = await _dbContext.RevenueRecords.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
+            borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
+            fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
             recentRevenue
         });
     }
@@ -3049,6 +3074,78 @@ public sealed class CirculationController : ControllerBase
             DateTimeKind.Local => date.ToUniversalTime(),
             _ => DateTime.SpecifyKind(date, DateTimeKind.Utc)
         };
+    }
+
+    private static bool TryBuildRevenueWindow(
+        string? period,
+        DateTime? date,
+        DateTime? from,
+        DateTime? to,
+        out DateTime windowStart,
+        out DateTime windowEnd)
+    {
+        windowStart = default;
+        windowEnd = default;
+
+        var normalizedPeriod = period?.Trim().ToLowerInvariant();
+        var referenceDate = NormalizeUtc(date ?? DateTime.UtcNow);
+
+        if (normalizedPeriod is null or "" or "all")
+        {
+            if (from is null && to is null)
+            {
+                return false;
+            }
+
+            if (from is null || to is null)
+            {
+                return false;
+            }
+
+            windowStart = NormalizeUtc(from.Value).Date;
+            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            if (windowEnd <= windowStart)
+            {
+                windowEnd = windowStart.AddDays(1);
+            }
+
+            return true;
+        }
+
+        if (normalizedPeriod == "day")
+        {
+            windowStart = referenceDate.Date;
+            windowEnd = windowStart.AddDays(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "month")
+        {
+            windowStart = new DateTime(referenceDate.Year, referenceDate.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            windowEnd = windowStart.AddMonths(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "year")
+        {
+            windowStart = new DateTime(referenceDate.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            windowEnd = windowStart.AddYears(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "range" && from is not null && to is not null)
+        {
+            windowStart = NormalizeUtc(from.Value).Date;
+            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            if (windowEnd <= windowStart)
+            {
+                windowEnd = windowStart.AddDays(1);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private sealed class BookInfo

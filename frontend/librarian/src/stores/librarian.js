@@ -383,9 +383,28 @@ export const useLibrarianStore = defineStore('librarian', () => {
   async function loadFines() {
     try { const r = await apiFetch(`${CIRC_API}/fines`); if (r.ok) fines.value = await r.json() } catch {}
   }
-  async function loadRevenueSummary() {
+  function serializeDate(value) {
+    if (!value) return ''
+    if (typeof value === 'string') return value
+    if (value instanceof Date) return value.toISOString().slice(0, 10)
+    if (typeof value.format === 'function') return value.format('YYYY-MM-DD')
+    return String(value)
+  }
+
+  async function loadRevenueSummary(params = {}) {
     try {
-      const r = await apiFetch(`${CIRC_API}/revenue`)
+      const search = new URLSearchParams()
+      if (params.period) search.set('period', String(params.period))
+      const date = serializeDate(params.date)
+      const from = serializeDate(params.from)
+      const to = serializeDate(params.to)
+      if (date) search.set('date', date)
+      if (from) search.set('from', from)
+      if (to) search.set('to', to)
+      if (params.take) search.set('take', String(params.take))
+
+      const url = search.toString() ? `${CIRC_API}/revenue?${search.toString()}` : `${CIRC_API}/revenue`
+      const r = await apiFetch(url)
       if (r.ok) revenueSummary.value = await r.json()
     } catch {}
   }
