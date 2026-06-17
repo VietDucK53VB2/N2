@@ -244,13 +244,17 @@ function requestDate(tx) {
   return tx.RequestDate || tx.requestDate || tx.CreatedAt || tx.createdAt || tx.BorrowedAt || tx.borrowedAt || ''
 }
 
+function borrowedDate(tx) {
+  return tx.BorrowedAt || tx.borrowedAt || requestDate(tx)
+}
+
 function formatDateTime(value) {
   return formatDateTimeText(value)
 }
 
 function loanTimeText(tx) {
   if (store.isPending(tx)) return 'Chưa bắt đầu tính thời gian mượn'
-  const borrowedAt = requestDate(tx)
+  const borrowedAt = borrowedDate(tx)
   return borrowedAt ? `Đã mượn: ${formatDurationText(borrowedAt, nowTick.value)}` : 'Đã mượn'
 }
 
@@ -287,7 +291,7 @@ function returnButtonText(tx) {
 function progressPercent(tx) {
   if (store.isPending(tx)) return 8
   if (store.isReturnPending(tx)) return 100
-  const borrowedAt = requestDate(tx)
+  const borrowedAt = borrowedDate(tx)
   const dueAt = tx.DueAt || tx.dueAt
   const start = borrowedAt ? new Date(borrowedAt) : null
   const due = dueAt ? new Date(dueAt) : null

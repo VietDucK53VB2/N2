@@ -151,16 +151,41 @@ function statusOf(transaction = {}) {
   return String(transaction.Status || transaction.status || '').trim()
 }
 
+function dueAtOf(transaction = {}) {
+  return (
+    transaction.DueAt ||
+    transaction.dueAt ||
+    transaction.due_at ||
+    transaction.returnAt ||
+    transaction.ReturnAt ||
+    ''
+  )
+}
+
+function parseTime(value) {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function isTimeBasedOverdue(transaction = {}) {
+  if (isPending(transaction) || isReturned(transaction) || isReturnPending(transaction)) {
+    return false
+  }
+  const dueAt = parseTime(dueAtOf(transaction))
+  return Boolean(dueAt && dueAt.getTime() < Date.now())
+}
+
 function isPending(transaction) {
   return statusOf(transaction) === 'Pending'
 }
 
 function isBorrowed(transaction) {
-  return statusOf(transaction) === 'Borrowed'
+  return statusOf(transaction) === 'Borrowed' && !isTimeBasedOverdue(transaction)
 }
 
 function isOverdue(transaction) {
-  return statusOf(transaction) === 'Overdue'
+  return statusOf(transaction) === 'Overdue' || isTimeBasedOverdue(transaction)
 }
 
 function isReturned(transaction) {

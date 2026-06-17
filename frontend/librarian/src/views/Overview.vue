@@ -242,12 +242,11 @@ const statusStats = computed(() => {
     { label: 'Đã trả', color: '#3d7db3', count: 0 }
   ]
   for (const tx of allTx.value) {
-    const status = String(tx.Status || tx.status || '').trim()
-    if (status === 'Pending') map[0].count += 1
-    else if (status === 'Borrowed') map[1].count += 1
-    else if (status === 'ReturnPending') map[2].count += 1
-    else if (status === 'Overdue') map[3].count += 1
-    else if (status === 'Returned') map[4].count += 1
+    if (store.isPending(tx)) map[0].count += 1
+    else if (store.isBorrowed(tx)) map[1].count += 1
+    else if (store.isReturnPending(tx)) map[2].count += 1
+    else if (store.isOverdue(tx)) map[3].count += 1
+    else if (store.isReturned(tx)) map[4].count += 1
   }
   return map.filter(item => item.count > 0)
 })

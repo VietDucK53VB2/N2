@@ -62,7 +62,7 @@
             </div>
           </template>
           <template v-else-if="column.key === 'Status'">
-            <a-tag :color="statusColor(record.Status)">{{ statusLabel(record.Status) }}</a-tag>
+            <a-tag :color="statusColor(record)">{{ statusLabel(record) }}</a-tag>
           </template>
           <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDateTime(record.BorrowedAt) }}</template>
           <template v-else-if="column.key === 'DueAt'">{{ fmtDateTime(record.DueAt) }}</template>
@@ -277,19 +277,19 @@ function fmtDateTime(d) {
   return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
 
-function statusColor(s) {
-  if (s === 'Pending') return 'orange'
-  if (s === 'ReturnPending') return 'purple'
-  if (s === 'Overdue') return 'red'
-  if (s === 'Returned') return 'green'
+function statusColor(record) {
+  if (store.isPending(record)) return 'orange'
+  if (store.isReturnPending(record)) return 'purple'
+  if (store.isOverdue(record)) return 'red'
+  if (store.isReturned(record)) return 'green'
   return 'blue'
 }
 
-function statusLabel(s) {
-  if (s === 'Pending') return 'Chờ duyệt'
-  if (s === 'ReturnPending') return 'Chờ kiểm tra trả'
-  if (s === 'Overdue') return 'Quá hạn'
-  if (s === 'Returned') return 'Đã trả'
+function statusLabel(record) {
+  if (store.isPending(record)) return 'Chờ duyệt'
+  if (store.isReturnPending(record)) return 'Chờ kiểm tra trả'
+  if (store.isOverdue(record)) return 'Quá hạn'
+  if (store.isReturned(record)) return 'Đã trả'
   return 'Đang mượn'
 }
 

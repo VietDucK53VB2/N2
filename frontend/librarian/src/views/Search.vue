@@ -39,7 +39,7 @@
       <a-table :columns="cols" :data-source="result.transactions" size="small" :pagination="{ pageSize: 6 }" row-key="Id">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'Status'">
-            <a-tag :color="statusColor(record.Status)">{{ statusLabel(record.Status) }}</a-tag>
+            <a-tag :color="statusColor(record)">{{ statusLabel(record) }}</a-tag>
           </template>
           <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDateTime(record.BorrowedAt) }}</template>
           <template v-else-if="column.key === 'DueAt'">{{ fmtDateTime(record.DueAt) }}</template>
@@ -116,20 +116,20 @@ function fmtDateTime(d) {
   return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
 
-function statusColor(s) {
-  return s === 'Pending' ? 'orange' : s === 'ReturnPending' ? 'purple' : s === 'Overdue' ? 'red' : s === 'Returned' ? 'green' : 'blue'
+function statusColor(record) {
+  if (store.isPending(record)) return 'orange'
+  if (store.isReturnPending(record)) return 'purple'
+  if (store.isOverdue(record)) return 'red'
+  if (store.isReturned(record)) return 'green'
+  return 'blue'
 }
 
-function statusLabel(s) {
-  return s === 'Pending'
-    ? 'Chờ duyệt'
-    : s === 'ReturnPending'
-      ? 'Chờ trả'
-      : s === 'Overdue'
-        ? 'Quá hạn'
-        : s === 'Returned'
-          ? 'Đã trả'
-          : 'Đang mượn'
+function statusLabel(record) {
+  if (store.isPending(record)) return 'Chờ duyệt'
+  if (store.isReturnPending(record)) return 'Chờ trả'
+  if (store.isOverdue(record)) return 'Quá hạn'
+  if (store.isReturned(record)) return 'Đã trả'
+  return 'Đang mượn'
 }
 
 onMounted(() => {
