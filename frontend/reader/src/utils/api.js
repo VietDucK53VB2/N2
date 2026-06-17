@@ -265,10 +265,10 @@ export async function fetchBooks() {
   if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin}/api/books/products`,
-      GATEWAY_CATALOG_BOOKS_PRODUCTS,
-      GATEWAY_CATALOG_BOOKS,
+      `${window.location.origin}/api/catalog/books`,
       `${window.location.origin}/api/books`,
+      GATEWAY_CATALOG_BOOKS,
+      GATEWAY_CATALOG_BOOKS_PRODUCTS,
       `${BASE}/books`
     ])
     return Array.isArray(data) ? data.map(normalizeBook) : []
@@ -480,11 +480,11 @@ export async function loadUserProfile() {
 }
 
 export function normalizeBook(b = {}) {
-  const id = b.id ?? b.Id ?? b.bookId ?? b.BookId
-  const tenSach = b.tenSach ?? b.TenSach ?? b.title ?? b.Title ?? '—'
-  const tacGia = b.tacGia ?? b.TacGia ?? b.author ?? b.Author ?? '—'
+  const id = b.id ?? b.Id ?? b.bookId ?? b.BookId ?? b.ma ?? b.Ma
+  const tenSach = b.tenSach ?? b.TenSach ?? b.tenSanPham ?? b.TenSanPham ?? b.title ?? b.Title ?? '?'
+  const tacGia = b.tacGia ?? b.TacGia ?? b.author ?? b.Author ?? '?'
   const nhaSanXuat = b.nhaSanXuat ?? b.NhaSanXuat ?? b.publisher ?? b.Publisher ?? ''
-  const imageUrl = b.imageUrl ?? b.ImageUrl ?? ''
+  const imageUrl = b.imageUrl ?? b.ImageUrl ?? b.anhUrl ?? b.AnhUrl ?? b.anhBia ?? b.AnhBia ?? ''
   const isbn = b.isbn ?? b.Isbn ?? b.ISBN ?? ''
   const namXuatBan = Number(b.namXuatBan ?? b.NamXuatBan ?? b.yearPublished ?? b.YearPublished ?? 0)
   const soLuong = Number(b.soLuong ?? b.SoLuong ?? 0)
@@ -508,7 +508,6 @@ export function canBorrowBook(book = {}) {
   const status = String(book.trangThai ?? book.TrangThai ?? '').trim()
   return remaining > 0 && status === 'Có thể mượn'
 }
-
 export function normalizeEvent(e = {}) {
   return {
     id: e.Id || e.id || '',

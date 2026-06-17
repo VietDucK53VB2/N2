@@ -193,11 +193,11 @@ function headers() {
 }
 
 function normalizeBook(item = {}) {
-  const id = item.id ?? item.Id ?? item.bookId ?? item.BookId ?? ''
-  const title = item.tenSach ?? item.TenSach ?? item.title ?? item.Title ?? '—'
-  const author = item.tacGia ?? item.TacGia ?? item.author ?? item.Author ?? '—'
-  const category = item.theLoai ?? item.TheLoai ?? item.genre ?? item.Genre ?? item.category ?? item.Category ?? 'Chưa phân loại'
-  const imageUrl = item.imageUrl ?? item.ImageUrl ?? ''
+  const id = item.id ?? item.Id ?? item.bookId ?? item.BookId ?? item.ma ?? item.Ma ?? ""
+  const title = item.tenSach ?? item.TenSach ?? item.tenSanPham ?? item.TenSanPham ?? item.title ?? item.Title ?? '?'
+  const author = item.tacGia ?? item.TacGia ?? item.author ?? item.Author ?? '?'
+  const category = item.theLoai ?? item.TheLoai ?? item.genre ?? item.Genre ?? item.category ?? item.Category ?? 'Ch?a ph?n lo?i'
+  const imageUrl = item.imageUrl ?? item.ImageUrl ?? item.anhUrl ?? item.AnhUrl ?? item.anhBia ?? item.AnhBia ?? ''
   const available = Number(item.soBanConLai ?? item.SoBanConLai ?? 0)
   const status = item.trangThai ?? item.TrangThai ?? item.status ?? item.Status ?? ''
   const rating = Number(item.danhGiaTrungBinh ?? item.DanhGiaTrungBinh ?? item.averageRating ?? item.AverageRating ?? 0)
@@ -208,7 +208,7 @@ function normalizeBook(item = {}) {
 async function loadCatalogBooks() {
   loadingCatalog.value = true
   try {
-    const response = await fetch(`${window.location.origin}/api/catalog/books/products`, { headers: headers() })
+    const response = await fetch(`${window.location.origin}/api/catalog/books`, { headers: headers() })
     if (!response.ok) {
       catalogBooks.value = []
       return
