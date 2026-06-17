@@ -4,7 +4,7 @@
       <div class="eyebrow">LỊCH SỬ CÁ NHÂN</div>
       <h2 class="text-h5 text-md-h4 font-weight-black mb-2">Mượn trả và thanh toán</h2>
       <p class="text-body-2 text-grey-darken-1">
-        Theo dõi phiếu mượn, khoản thanh toán phí phạt và toàn bộ thông báo liên quan đến tài khoản của bạn.
+        Theo dõi phiếu mượn, khoản thanh toán phí phạt và các thông báo hệ thống dành riêng cho tài khoản của bạn.
       </p>
     </div>
 
@@ -134,7 +134,7 @@
       </v-col>
 
       <v-col cols="12" xl="4">
-        <v-card rounded="xl" elevation="1" class="mb-5">
+        <v-card rounded="xl" elevation="1">
           <v-card-title class="d-flex align-center justify-space-between">
             <span class="font-weight-bold">Thông báo hệ thống</span>
             <v-chip size="small" variant="tonal">{{ notifications.length }} mục</v-chip>
@@ -155,37 +155,6 @@
             <v-alert v-if="!notifications.length" type="info" variant="tonal">
               Chưa có thông báo nào.
             </v-alert>
-          </v-card-text>
-        </v-card>
-
-        <v-card rounded="xl" elevation="1">
-          <v-card-title class="d-flex align-center justify-space-between">
-            <span class="font-weight-bold">Lịch sử thao tác</span>
-            <v-chip size="small" variant="tonal">{{ activityEntries.length }} mục</v-chip>
-          </v-card-title>
-          <v-card-text class="pt-0">
-            <v-list lines="two" density="comfortable">
-              <v-list-item
-                v-for="item in activityEntries"
-                :key="item.id"
-                rounded="lg"
-                class="mb-2 activity-item"
-              >
-                <template #prepend>
-                  <v-avatar :color="item.color" size="36" variant="tonal" class="mr-3">
-                    <v-icon :icon="item.icon" size="18" />
-                  </v-avatar>
-                </template>
-                <v-list-item-title class="font-weight-bold">{{ item.title }}</v-list-item-title>
-                <v-list-item-subtitle>{{ item.message }}</v-list-item-subtitle>
-                <template #append>
-                  <span class="text-caption text-grey">{{ formatDateTime(item.createdAt) }}</span>
-                </template>
-              </v-list-item>
-              <v-alert v-if="!activityEntries.length" type="info" variant="tonal">
-                Chưa có lịch sử thao tác nào.
-              </v-alert>
-            </v-list>
           </v-card-text>
         </v-card>
       </v-col>
@@ -318,27 +287,12 @@ function estimateBorrowAmount(tx = {}) {
 
 function borrowStatus(tx = {}) {
   const status = String(store.statusOf(tx) || '').trim()
-  if (status === 'Pending') {
-    return { label: 'Chờ duyệt', color: 'warning', key: 'pending' }
-  }
-
-  if (status === 'ReturnPending') {
-    return { label: 'Chờ trả', color: 'info', key: 'paid' }
-  }
-
-  if (status === 'RenewPending') {
-    return { label: 'Chờ gia hạn', color: 'secondary', key: 'paid' }
-  }
-
-  if (status === 'Returned') {
-    return { label: 'Đã trả', color: 'success', key: 'paid' }
-  }
-
-  if (store.isOverdue(tx)) {
-    return { label: 'Quá hạn', color: 'error', key: 'paid' }
-  }
-
-  return { label: 'Đang mượn', color: 'success', key: 'paid' }
+  if (status === 'Pending') return { label: 'Chờ duyệt', color: 'warning' }
+  if (status === 'ReturnPending') return { label: 'Chờ trả', color: 'info' }
+  if (status === 'RenewPending') return { label: 'Chờ gia hạn', color: 'secondary' }
+  if (status === 'Returned') return { label: 'Đã trả', color: 'success' }
+  if (store.isOverdue(tx)) return { label: 'Quá hạn', color: 'error' }
+  return { label: 'Đang mượn', color: 'success' }
 }
 
 function getBorrowRecords() {
@@ -349,11 +303,15 @@ function getBorrowRecords() {
     const returnedAt = tx.ReturnedAt || tx.returnedAt
     const amount = estimateBorrowAmount(tx)
     const status = borrowStatus(tx)
-    const bookTitle = getDisplayBookTitle({
-      tenSach: tx.TenSach || tx.tenSach || book.tenSach || book.TenSach,
-      TenSach: tx.TenSach || tx.tenSach || book.tenSach || book.TenSach,
-      title: tx.Title || tx.title || book.tenSach || book.TenSach
-    })
+    const bookTitle = getDisplayBookTitle(
+      {
+        tenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || tx.bookTitle || tx.BookTitle || book.tenSach || book.TenSach,
+        TenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || tx.bookTitle || tx.BookTitle || book.tenSach || book.TenSach,
+        title: tx.Title || tx.title || tx.TenSach || tx.tenSach || book.tenSach || book.TenSach
+      },
+      `Sách #${String(tx.BookId || tx.bookId || index + 1)}`
+    )
+    const author = tx.TacGia || tx.tacGia || book.tacGia || book.TacGia || ''
 
     return {
       id: `borrow-${tx.Id || tx.id || index}`,
@@ -362,12 +320,12 @@ function getBorrowRecords() {
       typeLabel: 'Thu mượn',
       typeColor: 'success',
       reference: `Phiếu #${String(tx.Id || tx.id || index + 1).slice(0, 8)}`,
-      subject: `${bookTitle}${book.tacGia || tx.TacGia || tx.tacGia ? ` - ${tx.TacGia || tx.tacGia || book.tacGia || book.TacGia || ''}` : ''}`.trim(),
+      subject: author ? `${bookTitle} - ${author}` : bookTitle,
       description: returnedAt ? 'Phiếu đã hoàn tất và đã trả sách.' : 'Phiếu mượn đang được theo dõi trong lịch sử.',
       amount,
       createdAt: borrowedAt,
       requestedAt: borrowedAt,
-      paidAt: status.key === 'pending' ? null : borrowedAt,
+      paidAt: status.label === 'Chờ duyệt' ? null : borrowedAt,
       statusLabel: status.label,
       statusColor: status.color,
       sortAt: safeDate(returnedAt || dueAt || borrowedAt)?.getTime() || 0,
@@ -376,16 +334,33 @@ function getBorrowRecords() {
   })
 }
 
+function isFinePaid(item = {}) {
+  return Boolean(
+    item.IsPaid ||
+    item.isPaid ||
+    item.PaymentStatus === 'Paid' ||
+    item.paymentStatus === 'Paid' ||
+    item.PaidAt ||
+    item.paidAt
+  )
+}
+
+function isFinePending(item = {}) {
+  if (isFinePaid(item)) return false
+  return Boolean(
+    item.IsPaymentPending ||
+    item.isPaymentPending ||
+    item.PaymentRequestedAt ||
+    item.paymentRequestedAt ||
+    item.PaymentStatus === 'PendingApproval' ||
+    item.paymentStatus === 'PendingApproval'
+  )
+}
+
 function getFineStatus(fine = {}) {
-  if (isFinePaid(fine)) {
-    return { label: 'Đã thanh toán', color: 'success', key: 'paid' }
-  }
-
-  if (isFinePending(fine)) {
-    return { label: 'Chờ duyệt', color: 'warning', key: 'pending' }
-  }
-
-  return { label: 'Chưa yêu cầu', color: 'grey', key: 'unpaid' }
+  if (isFinePaid(fine)) return { label: 'Đã thanh toán', color: 'success' }
+  if (isFinePending(fine)) return { label: 'Chờ duyệt', color: 'warning' }
+  return { label: 'Chưa yêu cầu', color: 'grey' }
 }
 
 function getFineRecords() {
@@ -405,7 +380,7 @@ function getFineRecords() {
       typeLabel: 'Phí phạt',
       typeColor: 'warning',
       reference: `Phí #${String(fine.Id || fine.id || index + 1).slice(0, 8)}`,
-      subject: `${reason}${book && (book.tenSach || book.TenSach) ? ` - ${book.tenSach || book.TenSach}` : ''}`,
+      subject: book.tenSach || book.TenSach ? `${reason} - ${book.tenSach || book.TenSach}` : reason,
       description: `Book ID: ${fine.BookId || fine.bookId || '—'}`,
       amount,
       createdAt,
@@ -426,22 +401,10 @@ const paymentHistory = computed(() =>
 )
 
 const filteredPayments = computed(() => {
-  if (paymentFilter.value === 'borrow') {
-    return paymentHistory.value.filter(item => item.kind === 'borrow')
-  }
-
-  if (paymentFilter.value === 'fine') {
-    return paymentHistory.value.filter(item => item.kind === 'fine')
-  }
-
-  if (paymentFilter.value === 'pending') {
-    return paymentHistory.value.filter(item => item.statusLabel.includes('Chờ'))
-  }
-
-  if (paymentFilter.value === 'paid') {
-    return paymentHistory.value.filter(item => item.statusColor === 'success')
-  }
-
+  if (paymentFilter.value === 'borrow') return paymentHistory.value.filter(item => item.kind === 'borrow')
+  if (paymentFilter.value === 'fine') return paymentHistory.value.filter(item => item.kind === 'fine')
+  if (paymentFilter.value === 'pending') return paymentHistory.value.filter(item => item.statusLabel.includes('Chờ'))
+  if (paymentFilter.value === 'paid') return paymentHistory.value.filter(item => item.statusColor === 'success')
   return paymentHistory.value
 })
 
@@ -450,46 +413,32 @@ const notifications = computed(() => {
     .map(e => {
       const payload = e.payload || {}
       const eventType = String(e.eventType || '').toLowerCase()
-      const title = payload.Title || payload.title || eventType || 'Thông báo'
-      const message = payload.Message || payload.message || ''
-      const createdAt = payload.CreatedAt || payload.createdAt || e.publishedAt
+      const visibleToReader = Boolean(payload.VisibleToReader ?? payload.visibleToReader)
+      const allowedEvent =
+        eventType === 'reader.notification' ||
+        eventType.startsWith('reader.') ||
+        eventType.includes('notification') ||
+        visibleToReader
+      if (!allowedEvent) return null
+
+      const title = String(payload.Title || payload.title || '').trim()
+      const message = String(payload.Message || payload.message || '').trim()
+      if (!title && !message) return null
+
       const isReject = eventType.includes('rejected') || eventType.includes('reject')
       const isRenew = eventType.includes('renew')
       const isReturn = eventType.includes('return')
+
       return {
         id: e.id,
-        title,
+        title: title || 'Thông báo',
         message,
-        createdAt,
+        createdAt: payload.CreatedAt || payload.createdAt || e.publishedAt,
         type: isReject ? 'error' : isRenew ? 'warning' : isReturn ? 'success' : 'info'
       }
     })
-    .filter(x => x.message || x.title)
+    .filter(Boolean)
     .slice(0, 20)
-})
-
-const activityEntries = computed(() => {
-  return (store.events || [])
-    .map((item, index) => {
-      const payload = item.payload || {}
-      const eventType = String(item.eventType || '').toLowerCase()
-      const title = payload.Title || payload.title || eventType || 'Thao tác'
-      const message = payload.Message || payload.message || payload.Reason || payload.reason || 'Đã lưu lịch sử'
-      const createdAt = payload.CreatedAt || payload.createdAt || item.publishedAt
-      const isDanger = eventType.includes('cancel') || eventType.includes('reject') || eventType.includes('remove')
-      const isWarning = eventType.includes('renew') || eventType.includes('request') || eventType.includes('pending')
-      const isSuccess = eventType.includes('approved') || eventType.includes('borrowed') || eventType.includes('returned') || eventType.includes('paid')
-      return {
-        id: `${item.id || index}`,
-        title,
-        message,
-        createdAt,
-        icon: isDanger ? 'mdi-close-circle-outline' : isWarning ? 'mdi-clock-outline' : isSuccess ? 'mdi-check-circle-outline' : 'mdi-history',
-        color: isDanger ? 'error' : isWarning ? 'warning' : isSuccess ? 'success' : 'info'
-      }
-    })
-    .filter(x => x.message || x.title)
-    .slice(0, 40)
 })
 
 const stats = computed(() => [
@@ -519,29 +468,6 @@ const stats = computed(() => [
   }
 ])
 
-function isFinePaid(item = {}) {
-  return Boolean(
-    item.IsPaid ||
-    item.isPaid ||
-    item.PaymentStatus === 'Paid' ||
-    item.paymentStatus === 'Paid' ||
-    item.PaidAt ||
-    item.paidAt
-  )
-}
-
-function isFinePending(item = {}) {
-  if (isFinePaid(item)) return false
-  return Boolean(
-    item.IsPaymentPending ||
-    item.isPaymentPending ||
-    item.PaymentRequestedAt ||
-    item.paymentRequestedAt ||
-    item.PaymentStatus === 'PendingApproval' ||
-    item.paymentStatus === 'PendingApproval'
-  )
-}
-
 function openDetail(item) {
   selectedRecord.value = item
   detailDialog.value = true
@@ -569,7 +495,6 @@ onMounted(async () => {
 
 .history-stat-card,
 .history-table,
-.activity-item,
 .detail-box {
   border: 1px solid #e6efe9;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05) !important;
