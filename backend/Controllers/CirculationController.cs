@@ -1381,10 +1381,14 @@ public sealed class CirculationController : ControllerBase
             return StatusCode(catalogBorrowResult.StatusCode, new { Message = catalogBorrowResult.Message });
 
         var approvedAt = DateTime.UtcNow;
+        var requestedBorrowedAt = NormalizeUtc(transaction.BorrowedAt);
         var requestedDueAt = NormalizeUtc(transaction.DueAt);
+        var requestedDuration = requestedDueAt - requestedBorrowedAt;
         transaction.Status = "Borrowed";
         transaction.BorrowedAt = approvedAt;
-        transaction.DueAt = requestedDueAt > approvedAt ? requestedDueAt : approvedAt.AddDays(DefaultBorrowDays);
+        transaction.DueAt = requestedDuration > TimeSpan.Zero
+            ? approvedAt.Add(requestedDuration)
+            : approvedAt.AddDays(DefaultBorrowDays);
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.approved", new { TransactionId = id, ApprovedAt = new DateTimeOffset(approvedAt, TimeSpan.Zero) }));
         _dbContext.PublishedEventLogs.Add(CreateEventLog("book.borrowed", new BookBorrowedEvent
         {
