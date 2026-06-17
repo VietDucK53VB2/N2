@@ -4,6 +4,7 @@ const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
 const GATEWAY_CATALOG_BOOKS = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books`
+const GATEWAY_CATALOG_BOOKS_PRODUCTS = `${GATEWAY_CATALOG_BOOKS}/products`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 let authBootstrapComplete = false
 
@@ -264,8 +265,10 @@ export async function fetchBooks() {
   if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin}/api/books`,
+      `${window.location.origin}/api/books/products`,
+      GATEWAY_CATALOG_BOOKS_PRODUCTS,
       GATEWAY_CATALOG_BOOKS,
+      `${window.location.origin}/api/books`,
       `${BASE}/books`
     ])
     return Array.isArray(data) ? data.map(normalizeBook) : []
@@ -483,17 +486,27 @@ export function normalizeBook(b = {}) {
   const nhaSanXuat = b.nhaSanXuat ?? b.NhaSanXuat ?? b.publisher ?? b.Publisher ?? ''
   const imageUrl = b.imageUrl ?? b.ImageUrl ?? ''
   const isbn = b.isbn ?? b.Isbn ?? b.ISBN ?? ''
+  const namXuatBan = Number(b.namXuatBan ?? b.NamXuatBan ?? b.yearPublished ?? b.YearPublished ?? 0)
   const soLuong = Number(b.soLuong ?? b.SoLuong ?? 0)
   const soBanDaMuon = Number(b.soBanDaMuon ?? b.SoBanDaMuon ?? 0)
   const soBanConLai = Number(b.soBanConLai ?? b.SoBanConLai ?? Math.max(soLuong - soBanDaMuon, 0))
-  const moTa = b.moTa ?? b.MoTa ?? b.description ?? b.Description ?? ''
+  const moTa = b.moTa ?? b.MoTa ?? b.tomTat ?? b.TomTat ?? b.description ?? b.Description ?? ''
   const giaMuon = Number(b.giaMuon ?? b.GiaMuon ?? b.giaThue ?? b.GiaThue ?? b.price ?? b.Price ?? b.donGia ?? b.DonGia ?? 0)
   const theLoai = b.theLoai ?? b.TheLoai ?? b.genre ?? b.Genre ?? b.category ?? b.Category ?? ''
+  const trangThai = b.trangThai ?? b.TrangThai ?? b.status ?? b.Status ?? ''
+  const danhGiaTrungBinh = Number(b.danhGiaTrungBinh ?? b.DanhGiaTrungBinh ?? b.averageRating ?? b.AverageRating ?? 0)
 
   return {
     id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn, theLoai,
-    soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon
+    namXuatBan, soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon,
+    trangThai, danhGiaTrungBinh
   }
+}
+
+export function canBorrowBook(book = {}) {
+  const remaining = Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
+  const status = String(book.trangThai ?? book.TrangThai ?? '').trim()
+  return remaining > 0 && status === 'Có thể mượn'
 }
 
 export function normalizeEvent(e = {}) {

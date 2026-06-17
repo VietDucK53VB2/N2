@@ -26,8 +26,12 @@
 
           <div class="flex-grow-1">
             <div class="d-flex ga-2 mb-2 flex-wrap">
-              <v-chip size="small" :color="book.soBanConLai > 0 ? 'success' : 'error'" variant="flat">
-                {{ book.soBanConLai > 0 ? `Còn ${book.soBanConLai} quyển` : 'Hết bản' }}
+              <v-chip size="small" :color="canBorrowBook(book) ? 'success' : 'error'" variant="flat">
+                {{ canBorrowBook(book) ? `Còn ${book.soBanConLai} quyển` : (book.trangThai || 'Hết bản') }}
+              </v-chip>
+              <v-chip v-if="book.trangThai" size="small" color="primary" variant="tonal">{{ book.trangThai }}</v-chip>
+              <v-chip v-if="book.danhGiaTrungBinh" size="small" color="amber" variant="tonal">
+                <v-icon start size="12">mdi-star</v-icon>{{ Number(book.danhGiaTrungBinh).toFixed(1) }}/5
               </v-chip>
               <v-chip v-if="borrowCount" size="small" color="deep-orange" variant="flat">
                 <v-icon start size="12">mdi-fire</v-icon>{{ borrowCount }} lượt mượn
@@ -36,6 +40,7 @@
             <h2 class="text-h5 font-weight-black text-white mb-1">{{ book.tenSach }}</h2>
             <p class="text-body-2 text-white-70"><v-icon size="14">mdi-account-edit</v-icon> {{ book.tacGia }}</p>
             <p v-if="book.nhaSanXuat" class="text-caption text-white-50"><v-icon size="12">mdi-domain</v-icon> {{ book.nhaSanXuat }}</p>
+            <p v-if="book.theLoai" class="text-caption text-white-50"><v-icon size="12">mdi-tag-outline</v-icon> {{ book.theLoai }}</p>
             <p v-if="book.isbn" class="text-caption text-white-50"><v-icon size="12">mdi-barcode</v-icon> ISBN: {{ book.isbn }}</p>
           </div>
         </div>
@@ -50,8 +55,35 @@
           <v-icon size="16" color="primary">mdi-text</v-icon> Tóm tắt nội dung
         </h4>
         <p class="text-body-2 text-grey">
-          {{ book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
+          {{ book.tomTat || book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
         </p>
+
+        <v-row class="book-meta-grid mt-4" dense>
+          <v-col cols="6" md="3">
+            <div class="meta-card">
+              <span class="meta-label">Năm XB</span>
+              <strong>{{ book.namXuatBan || '—' }}</strong>
+            </div>
+          </v-col>
+          <v-col cols="6" md="3">
+            <div class="meta-card">
+              <span class="meta-label">Số lượng</span>
+              <strong>{{ book.soLuong ?? '—' }}</strong>
+            </div>
+          </v-col>
+          <v-col cols="6" md="3">
+            <div class="meta-card">
+              <span class="meta-label">Đã mượn</span>
+              <strong>{{ book.soBanDaMuon ?? '—' }}</strong>
+            </div>
+          </v-col>
+          <v-col cols="6" md="3">
+            <div class="meta-card">
+              <span class="meta-label">Còn lại</span>
+              <strong :class="book.soBanConLai > 0 ? 'text-success' : 'text-error'">{{ book.soBanConLai ?? '—' }}</strong>
+            </div>
+          </v-col>
+        </v-row>
 
         <div class="reviews-panel mt-5">
           <div class="d-flex align-center justify-space-between mb-3">
@@ -128,7 +160,7 @@
           variant="tonal"
           color="primary"
           class="mr-2"
-          :disabled="book.soBanConLai <= 0"
+          :disabled="!canBorrowBook(book)"
           prepend-icon="mdi-cart-plus"
           @click="handleAddToCart"
         >
@@ -137,7 +169,7 @@
         <v-btn
           class="btn-gradient"
           size="large"
-          :disabled="book.soBanConLai <= 0"
+          :disabled="!canBorrowBook(book)"
           :loading="borrowing"
           prepend-icon="mdi-book-plus"
           @click="handleBorrow"
@@ -152,10 +184,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { borrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
+import { borrowBook, canBorrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
 import { titleColor, formatMoney, formatDurationText, formatDurationParts } from '@/utils/helpers'
 import dayjs from 'dayjs'
 import 'dayjs/locale/vi'
+
 dayjs.locale('vi')
 
 const props = defineProps({
@@ -171,11 +204,13 @@ const quantity = ref(1)
 const borrowReturnAt = ref('')
 const reviews = ref([])
 const reviewsLoading = ref(false)
+
 const avgRating = computed(() => {
   if (!reviews.value.length) return '0.0/5'
   const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
   return `${(total / reviews.value.length).toFixed(1)}/5`
 })
+
 const roundedRating = computed(() => {
   if (!reviews.value.length) return 0
   const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
@@ -186,6 +221,7 @@ const heroBg = computed(() => {
   if (props.book?.imageUrl) return { backgroundImage: `url(${props.book.imageUrl})` }
   return { backgroundColor: titleColor(props.book?.tenSach) }
 })
+
 const maxQuantity = computed(() => Math.max(1, Math.min(Number(props.book?.soBanConLai || 1), 10)))
 const unitPrice = computed(() => getBorrowUnitPrice(props.book))
 const borrowStart = ref(new Date())
@@ -278,6 +314,12 @@ async function handleBorrow() {
     errorMessage.value = 'Không tìm thấy mã sách.'
     return
   }
+  if (!canBorrowBook(props.book || {})) {
+    errorMessage.value = props.book?.trangThai
+      ? `Sách hiện đang ở trạng thái "${props.book.trangThai}" nên chưa thể mượn.`
+      : 'Sách hiện chưa đủ điều kiện để mượn.'
+    return
+  }
 
   borrowing.value = true
   try {
@@ -311,6 +353,10 @@ function handleAddToCart() {
   errorMessage.value = ''
   if (!props.book?.id) {
     errorMessage.value = 'Không tìm thấy mã sách.'
+    return
+  }
+  if (!canBorrowBook(props.book || {})) {
+    errorMessage.value = 'Sách hiện chưa đủ điều kiện để thêm vào giỏ hàng.'
     return
   }
   store.addToCart(props.book, quantity.value)
@@ -363,7 +409,6 @@ function getBorrowUnitPrice(book = {}) {
   background: rgba(255,255,255,0.92);
   color: #334155;
 }
-
 .favorite-btn.is-favorite {
   background: rgba(255,255,255,0.98);
 }
@@ -452,6 +497,26 @@ function getBorrowUnitPrice(book = {}) {
   text-align: center;
   font-weight: 800;
   color: #1f2937;
+}
+.book-meta-grid {
+  display: grid;
+  gap: 10px;
+}
+.meta-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fbfa;
+  border: 1px solid #e6efe9;
+}
+.meta-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 @media (max-width: 640px) {
   .borrow-panel {

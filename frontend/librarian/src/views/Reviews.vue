@@ -85,24 +85,47 @@ const avgRating = computed(() => {
 async function load() {
   loading.value = true
   try {
-    const r = await fetch(`${window.location.origin}/api/circulation/books/reviews`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
-      }
-    })
-    if (!r.ok) {
+    const [reviewsResponse, catalogResponse] = await Promise.all([
+      fetch(`${window.location.origin}/api/circulation/books/reviews`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
+        }
+      }),
+      fetch(`${window.location.origin}/api/catalog/books/products`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
+        }
+      })
+    ])
+
+    if (!reviewsResponse.ok) {
       groups.value = []
       return
     }
-    const data = await r.json()
-    groups.value = Array.isArray(data)
-      ? data.map(item => ({
-          bookId: item.bookId || item.BookId || '',
-          title: item.title || item.Title || item.tenSach || item.TenSach || item.bookName || item.BookName || '',
-          averageRating: Number(item.averageRating || item.AverageRating || 0),
-          reviews: Array.isArray(item.reviews || item.Reviews) ? (item.reviews || item.Reviews) : []
-        }))
+
+    const reviewsData = await reviewsResponse.json()
+    const catalogData = catalogResponse.ok ? await catalogResponse.json() : []
+    const catalogMap = new Map(
+      Array.isArray(catalogData)
+        ? catalogData.map(item => [
+            String(item.id || item.Id || item.bookId || item.BookId || ''),
+            item.tenSach || item.TenSach || item.title || item.Title || item.bookName || item.BookName || ''
+          ]).filter(([id]) => id)
+        : []
+    )
+
+    groups.value = Array.isArray(reviewsData)
+      ? reviewsData.map(item => {
+          const bookId = String(item.bookId || item.BookId || item.id || item.Id || '')
+          return {
+            bookId,
+            title: item.title || item.Title || item.tenSach || item.TenSach || item.bookName || item.BookName || catalogMap.get(bookId) || '',
+            averageRating: Number(item.averageRating || item.AverageRating || 0),
+            reviews: Array.isArray(item.reviews || item.Reviews) ? (item.reviews || item.Reviews) : []
+          }
+        })
       : []
   } catch {
     groups.value = []

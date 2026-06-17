@@ -199,13 +199,16 @@ function normalizeBook(item = {}) {
   const category = item.theLoai ?? item.TheLoai ?? item.genre ?? item.Genre ?? item.category ?? item.Category ?? 'Chưa phân loại'
   const imageUrl = item.imageUrl ?? item.ImageUrl ?? ''
   const available = Number(item.soBanConLai ?? item.SoBanConLai ?? 0)
-  return { id: String(id), title, author, category, imageUrl, available }
+  const status = item.trangThai ?? item.TrangThai ?? item.status ?? item.Status ?? ''
+  const rating = Number(item.danhGiaTrungBinh ?? item.DanhGiaTrungBinh ?? item.averageRating ?? item.AverageRating ?? 0)
+  const year = Number(item.namXuatBan ?? item.NamXuatBan ?? 0)
+  return { id: String(id), title, author, category, imageUrl, available, status, rating, year }
 }
 
 async function loadCatalogBooks() {
   loadingCatalog.value = true
   try {
-    const response = await fetch(`${window.location.origin}/api/catalog/books`, { headers: headers() })
+    const response = await fetch(`${window.location.origin}/api/catalog/books/products`, { headers: headers() })
     if (!response.ok) {
       catalogBooks.value = []
       return

@@ -107,6 +107,30 @@
           </div>
         </template>
       </v-data-table>
+
+      <v-dialog v-model="reasonDialog" max-width="560">
+        <v-card rounded="xl">
+          <v-card-title class="font-weight-bold">Từ chối duyệt phí phạt</v-card-title>
+          <v-card-text>
+            <p class="text-body-2 text-grey mb-4">{{ reasonMessage }}</p>
+            <v-textarea
+              v-model="reasonValue"
+              label="Lý do từ chối"
+              variant="outlined"
+              auto-grow
+              rows="4"
+              hide-details
+            />
+          </v-card-text>
+          <v-card-actions class="px-4 pb-4">
+            <v-spacer />
+            <v-btn variant="text" @click="closeReasonDialog">Hủy</v-btn>
+            <v-btn color="error" :loading="reasonBusy" @click="confirmRejectReason">
+              <v-icon start>mdi-close</v-icon> Từ chối
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </v-card>
   </div>
 </template>
@@ -119,6 +143,11 @@ import { formatDateTime, formatMoney, getDisplayBookTitle, getDisplayCardNumber,
 const libStore = useLibrarianStore()
 const filter = ref('all')
 const actionId = ref(null)
+const reasonDialog = ref(false)
+const reasonBusy = ref(false)
+const reasonValue = ref('')
+const reasonMessage = ref('')
+const reasonTarget = ref(null)
 
 const headers = [
   { title: 'Độc giả', key: 'reader', width: '220px', sortable: false },
@@ -197,13 +226,30 @@ async function approve(item) {
 
 async function reject(item) {
   const id = item.Id || item.id
-  const reason = libStore.promptRejectReason('Không đủ điều kiện duyệt thanh toán phí phạt')
+  reasonTarget.value = id
+  reasonValue.value = 'Không đủ điều kiện duyệt thanh toán phí phạt'
+  reasonMessage.value = `Độc giả ${displayReader(item)} · ${displayCard(item)} · ${displayBook(item)}`
+  reasonDialog.value = true
+}
+
+function closeReasonDialog() {
+  reasonDialog.value = false
+  reasonBusy.value = false
+  reasonTarget.value = null
+}
+
+async function confirmRejectReason() {
+  if (!reasonTarget.value) return
+  const reason = String(reasonValue.value || '').trim()
   if (!reason) return
-  actionId.value = actionKey(item, 'reject')
+  reasonBusy.value = true
+  actionId.value = `${reasonTarget.value}:reject`
   try {
-    await libStore.rejectFinePayment(id, reason)
+    await libStore.rejectFinePayment(reasonTarget.value, reason)
+    closeReasonDialog()
   } finally {
     actionId.value = null
+    reasonBusy.value = false
   }
 }
 

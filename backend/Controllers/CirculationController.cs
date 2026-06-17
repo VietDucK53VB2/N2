@@ -68,6 +68,23 @@ public sealed class CirculationController : ControllerBase
             resolvedBookId = bookId.Value.ToString();
         }
 
+        var catalogBook = await GetCatalogBookAsync(resolvedBookId!, cancellationToken);
+        if (catalogBook is null)
+        {
+            return NotFound(new { Message = $"Book '{resolvedBookId}' not found in catalog." });
+        }
+
+        if (!CanBorrowCatalogBook(catalogBook, out var borrowBlockReason))
+        {
+            return BadRequest(new
+            {
+                Message = borrowBlockReason,
+                BookId = resolvedBookId,
+                SoBanConLai = catalogBook.SoBanConLai,
+                TrangThai = catalogBook.TrangThai
+            });
+        }
+
         var monthlyLimit = await GetMonthlyBorrowLimitAsync(cancellationToken);
         if (monthlyLimit > 0 && !string.IsNullOrWhiteSpace(request.CardNumber))
         {
@@ -2411,8 +2428,12 @@ public sealed class CirculationController : ControllerBase
         {
             var client = _httpClientFactory.CreateClient();
             ForwardAuthorizationHeader(client);
-            // Fetch all books from catalog
-            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            // Prefer the richer products endpoint so N2 can render all N1-managed fields.
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            }
             if (!response.IsSuccessStatusCode)
                 return result;
 
@@ -2436,6 +2457,92 @@ public sealed class CirculationController : ControllerBase
             // Return empty dict on error
         }
         return result;
+    }
+
+    private async Task<BookInfo?> GetCatalogBookAsync(string bookId, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(bookId, out var numericBookId) || numericBookId <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            ForwardAuthorizationHeader(client);
+
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/{numericBookId}", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+                }
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in document.RootElement.EnumerateArray())
+                {
+                    var candidateId = ReadInt(item, "id", "Id", "bookId", "BookId");
+                    if (candidateId == numericBookId)
+                    {
+                        return JsonSerializer.Deserialize<BookInfo>(
+                            item.GetRawText(),
+                            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                    }
+                }
+
+                return null;
+            }
+
+            var rootId = ReadInt(document.RootElement, "id", "Id", "bookId", "BookId");
+            if (rootId == numericBookId)
+            {
+                return JsonSerializer.Deserialize<BookInfo>(
+                    document.RootElement.GetRawText(),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool CanBorrowCatalogBook(BookInfo book, out string reason)
+    {
+        if (book.SoBanConLai <= 0)
+        {
+            reason = "Sách đã hết bản có thể mượn.";
+            return false;
+        }
+
+        if (!string.Equals(book.TrangThai?.Trim(), "Có thể mượn", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = string.IsNullOrWhiteSpace(book.TrangThai)
+                ? "Sách chưa có trạng thái cho phép mượn."
+                : $"Sách hiện đang ở trạng thái '{book.TrangThai}' và chưa thể mượn.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     private async Task<Dictionary<string, ReaderIdentityInfo>> GetUsersFromIdentityByCardAsync(
@@ -2678,8 +2785,16 @@ public sealed class CirculationController : ControllerBase
         public string TenSach { get; set; } = "";
         public string TacGia { get; set; } = "";
         public string NhaSanXuat { get; set; } = "";
+        public string TheLoai { get; set; } = "";
         public string ImageUrl { get; set; } = "";
         public string Isbn { get; set; } = "";
+        public int NamXuatBan { get; set; }
+        public string TomTat { get; set; } = "";
+        public int SoLuong { get; set; }
+        public int SoBanDaMuon { get; set; }
+        public int SoBanConLai { get; set; }
+        public string TrangThai { get; set; } = "";
+        public decimal DanhGiaTrungBinh { get; set; }
     }
 
     private sealed record ReaderIdentityInfo(string CardNumber, string FullName, string Username, string Id, string Email);

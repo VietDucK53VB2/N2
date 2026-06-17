@@ -82,8 +82,16 @@ export const useAppStore = defineStore('app', () => {
       tenSach: book.tenSach ?? book.TenSach ?? book.title ?? book.Title ?? '—',
       tacGia: book.tacGia ?? book.TacGia ?? book.author ?? book.Author ?? '—',
       imageUrl: book.imageUrl ?? book.ImageUrl ?? '',
+      nhaSanXuat: book.nhaSanXuat ?? book.NhaSanXuat ?? '',
+      isbn: book.isbn ?? book.Isbn ?? book.ISBN ?? '',
+      namXuatBan: Number(book.namXuatBan ?? book.NamXuatBan ?? 0),
+      tomTat: book.tomTat ?? book.TomTat ?? book.moTa ?? book.MoTa ?? '',
       soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0),
-      theLoai: book.theLoai ?? book.TheLoai ?? ''
+      soLuong: Number(book.soLuong ?? book.SoLuong ?? 0),
+      soBanDaMuon: Number(book.soBanDaMuon ?? book.SoBanDaMuon ?? 0),
+      theLoai: book.theLoai ?? book.TheLoai ?? '',
+      trangThai: book.trangThai ?? book.TrangThai ?? '',
+      danhGiaTrungBinh: Number(book.danhGiaTrungBinh ?? book.DanhGiaTrungBinh ?? 0)
     }
   }
 
@@ -328,10 +336,19 @@ export const useAppStore = defineStore('app', () => {
         tenSach: book.tenSach || book.TenSach || '',
         tacGia: book.tacGia || book.TacGia || '',
         imageUrl: book.imageUrl || book.ImageUrl || '',
+        nhaSanXuat: book.nhaSanXuat || book.NhaSanXuat || '',
+        isbn: book.isbn || book.Isbn || book.ISBN || '',
+        namXuatBan: Number(book.namXuatBan ?? book.NamXuatBan ?? 0),
+        tomTat: book.tomTat || book.TomTat || book.moTa || book.MoTa || '',
         quantity: Math.min(10, Number(quantity || 1)),
         borrowDays: 1,
         borrowDueAt: addHoursToLocalIso(1),
-        soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
+        soLuong: Number(book.soLuong ?? book.SoLuong ?? 0),
+        soBanDaMuon: Number(book.soBanDaMuon ?? book.SoBanDaMuon ?? 0),
+        soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0),
+        theLoai: book.theLoai || book.TheLoai || '',
+        trangThai: book.trangThai || book.TrangThai || '',
+        danhGiaTrungBinh: Number(book.danhGiaTrungBinh ?? book.DanhGiaTrungBinh ?? 0)
       })
     }
     persistCart()
@@ -362,7 +379,15 @@ export const useAppStore = defineStore('app', () => {
           TenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || bk.tenSach,
           TacGia: tx.TacGia || tx.tacGia || bk.tacGia,
           ImageUrl: tx.ImageUrl || tx.imageUrl || bk.imageUrl,
-          Isbn: tx.Isbn || tx.isbn || bk.isbn
+          Isbn: tx.Isbn || tx.isbn || bk.isbn,
+          NamXuatBan: tx.NamXuatBan || tx.namXuatBan || bk.namXuatBan,
+          TomTat: tx.TomTat || tx.tomTat || bk.tomTat,
+          TheLoai: tx.TheLoai || tx.theLoai || bk.theLoai,
+          TrangThai: tx.TrangThai || tx.trangThai || bk.trangThai,
+          DanhGiaTrungBinh: tx.DanhGiaTrungBinh || tx.danhGiaTrungBinh || bk.danhGiaTrungBinh,
+          SoLuong: tx.SoLuong || tx.soLuong || bk.soLuong,
+          SoBanDaMuon: tx.SoBanDaMuon || tx.soBanDaMuon || bk.soBanDaMuon,
+          SoBanConLai: tx.SoBanConLai || tx.soBanConLai || bk.soBanConLai
         }
       })
     } else {
