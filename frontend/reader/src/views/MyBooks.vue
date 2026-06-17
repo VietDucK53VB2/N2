@@ -52,11 +52,7 @@
 
             <div class="timeline-box mb-3">
               <div class="timeline-line">
-                <span class="timeline-label">Yêu cầu gửi lúc:</span>
-                <span class="timeline-value">{{ formatDateTime(requestDate(tx)) }}</span>
-              </div>
-              <div class="timeline-line">
-                <span class="timeline-label">Tính thời gian mượn:</span>
+                <span class="timeline-label">Đã mượn từ:</span>
                 <span class="timeline-value" :class="{ 'text-warning': store.isPending(tx), 'text-error': store.isOverdue(tx) }">
                   {{ loanTimeText(tx) }}
                 </span>
@@ -255,7 +251,7 @@ function formatDateTime(value) {
 function loanTimeText(tx) {
   if (store.isPending(tx)) return 'Chưa bắt đầu tính thời gian mượn'
   const borrowedAt = borrowedDate(tx)
-  return borrowedAt ? `Đã mượn: ${formatDurationText(borrowedAt, nowTick.value)}` : 'Đã mượn'
+  return borrowedAt ? formatDurationText(borrowedAt, nowTick.value) : 'Đã mượn'
 }
 
 function timeRemainderText(tx) {

@@ -62,7 +62,10 @@
             </div>
           </template>
           <template v-else-if="column.key === 'Status'">
-            <a-tag :color="statusColor(record)">{{ statusLabel(record) }}</a-tag>
+            <div class="status-wrap">
+              <a-tag :color="statusColor(record)">{{ statusLabel(record) }}</a-tag>
+              <div class="status-detail">{{ statusDetail(record) }}</div>
+            </div>
           </template>
           <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDateTime(record.BorrowedAt) }}</template>
           <template v-else-if="column.key === 'DueAt'">{{ fmtDateTime(record.DueAt) }}</template>
@@ -273,6 +276,21 @@ function bookTitleOf(record = {}) {
   )
 }
 
+function formatDurationText(startValue, endValue) {
+  const start = new Date(startValue)
+  const end = new Date(endValue)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—'
+
+  const diffMs = Math.max(0, end.getTime() - start.getTime())
+  const totalSeconds = Math.floor(diffMs / 1000)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  return `${days} ngày ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
 function fmtDateTime(d) {
   return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
@@ -291,6 +309,33 @@ function statusLabel(record) {
   if (store.isOverdue(record)) return 'Quá hạn'
   if (store.isReturned(record)) return 'Đã trả'
   return 'Đang mượn'
+}
+
+function statusDetail(record) {
+  if (store.isPending(record)) {
+    return 'Chưa bắt đầu tính thời gian mượn'
+  }
+
+  const borrowedAt = record.BorrowedAt || record.borrowedAt
+  const dueAt = record.DueAt || record.dueAt
+  if (!borrowedAt || !dueAt) return '—'
+
+  if (store.isReturnPending(record)) {
+    return `Đã mượn: ${formatDurationText(borrowedAt, new Date())}`
+  }
+
+  if (store.isReturned(record)) {
+    const returnedAt = record.ReturnedAt || record.returnedAt
+    return returnedAt
+      ? `Đã trả sau: ${formatDurationText(borrowedAt, returnedAt)}`
+      : `Đã mượn: ${formatDurationText(borrowedAt, dueAt)}`
+  }
+
+  if (store.isOverdue(record)) {
+    return `Quá hạn: ${formatDurationText(dueAt, new Date())}`
+  }
+
+  return `Còn lại: ${formatDurationText(new Date(), dueAt)}`
 }
 
 onMounted(() => {
@@ -398,6 +443,18 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.status-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-detail {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 @media (max-width: 992px) {
