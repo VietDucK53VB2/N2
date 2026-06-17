@@ -81,7 +81,7 @@ async function handleBorrow(book) {
   try {
     const borrowedAt = new Date().toISOString()
     const dueAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-    const r = await borrowBook(card, book.id, 1, { borrowedAt, dueAt })
+    const r = await borrowBook(card, book.id, 1, { borrowedAt, dueAt, isbn: book.isbn || book.Isbn || book.ISBN || '' })
     if (r.ok) {
       emit('success')
       emit('update:modelValue', false)

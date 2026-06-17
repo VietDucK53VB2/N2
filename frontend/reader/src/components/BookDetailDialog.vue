@@ -58,33 +58,6 @@
           {{ book.tomTat || book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
         </p>
 
-        <v-row class="book-meta-grid mt-4" dense>
-          <v-col cols="6" md="3">
-            <div class="meta-card">
-              <span class="meta-label">Năm XB</span>
-              <strong>{{ book.namXuatBan || '—' }}</strong>
-            </div>
-          </v-col>
-          <v-col cols="6" md="3">
-            <div class="meta-card">
-              <span class="meta-label">Số lượng</span>
-              <strong>{{ book.soLuong ?? '—' }}</strong>
-            </div>
-          </v-col>
-          <v-col cols="6" md="3">
-            <div class="meta-card">
-              <span class="meta-label">Đã mượn</span>
-              <strong>{{ book.soBanDaMuon ?? '—' }}</strong>
-            </div>
-          </v-col>
-          <v-col cols="6" md="3">
-            <div class="meta-card">
-              <span class="meta-label">Còn lại</span>
-              <strong :class="book.soBanConLai > 0 ? 'text-success' : 'text-error'">{{ book.soBanConLai ?? '—' }}</strong>
-            </div>
-          </v-col>
-        </v-row>
-
         <div class="reviews-panel mt-5">
           <div class="d-flex align-center justify-space-between mb-3">
             <div>
@@ -325,7 +298,8 @@ async function handleBorrow() {
   try {
     const response = await borrowBook(card, bookId, quantity.value, {
       borrowedAt: borrowStart.value.toISOString(),
-      dueAt: dayjs(borrowReturnAt.value).toISOString()
+      dueAt: dayjs(borrowReturnAt.value).toISOString(),
+      isbn: props.book?.isbn || props.book?.Isbn || props.book?.ISBN || ''
     })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
@@ -497,26 +471,6 @@ function getBorrowUnitPrice(book = {}) {
   text-align: center;
   font-weight: 800;
   color: #1f2937;
-}
-.book-meta-grid {
-  display: grid;
-  gap: 10px;
-}
-.meta-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #f8fbfa;
-  border: 1px solid #e6efe9;
-}
-.meta-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 @media (max-width: 640px) {
   .borrow-panel {

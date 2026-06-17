@@ -10,6 +10,10 @@
     <div class="cart-grid">
       <div class="cart-main-col">
         <v-card rounded="xl" class="cart-panel" elevation="1">
+          <v-alert v-if="submitError" type="error" variant="tonal" density="compact" class="mb-4">
+            {{ submitError }}
+          </v-alert>
+
           <div class="panel-head">
             <h3 class="panel-title">Danh sách trong giỏ</h3>
             <v-btn variant="text" color="error" prepend-icon="mdi-trash-can-outline" :disabled="!items.length" @click="clearAll">
@@ -124,9 +128,11 @@
 import { computed, onMounted, watch, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { formatMoney, getDisplayName, formatDurationText } from '@/utils/helpers'
+import { borrowBook, getReaderCard } from '@/utils/api'
 
 const store = useAppStore()
 const submitting = ref(false)
+const submitError = ref('')
 
 const items = computed(() => store.cartItems)
 const userName = computed(() => getDisplayName(store.userInfo || {}, 'b?n'))
@@ -200,10 +206,33 @@ function clearAll() {
 async function submitCart() {
   if (!items.value.length) return
   submitting.value = true
+  submitError.value = ''
   try {
-    // Tạm thời giữ nút ở mức mô phỏng để bạn test giao diện trước.
-    await new Promise(resolve => setTimeout(resolve, 600))
+    const card = getReaderCard()
+    if (!card) {
+      throw new Error('Không tìm thấy mã thẻ độc giả.')
+    }
+
+    for (const item of items.value) {
+      const borrowedAt = new Date().toISOString()
+      const dueAt = new Date(item.borrowDueAt || Date.now() + 60 * 60 * 1000).toISOString()
+      const response = await borrowBook(card, item.id, Number(item.quantity || 1), {
+        borrowedAt,
+        dueAt,
+        isbn: item.isbn || item.Isbn || item.ISBN || ''
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.message || data?.Message || `Không mượn được "${item.tenSach}".`)
+      }
+    }
+
     store.clearCart()
+    await store.loadAll()
+  } catch (error) {
+    console.error(error)
+    submitError.value = error?.message || 'Không mượn được sách trong giỏ. Vui lòng thử lại.'
   } finally {
     submitting.value = false
   }

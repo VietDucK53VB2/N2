@@ -534,7 +534,16 @@ export function normalizeBook(b = {}) {
 export function canBorrowBook(book = {}) {
   const remaining = Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
   const status = String(book.trangThai ?? book.TrangThai ?? '').trim()
-  return remaining > 0 && status === 'Có thể mượn'
+  const normalizedStatus = status
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  return remaining > 0 && (
+    !normalizedStatus ||
+    normalizedStatus.includes('muon') ||
+    normalizedStatus.includes('available') ||
+    normalizedStatus.includes('co the')
+  )
 }
 export function normalizeEvent(e = {}) {
   return {

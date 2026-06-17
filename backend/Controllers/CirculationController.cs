@@ -69,6 +69,15 @@ public sealed class CirculationController : ControllerBase
         }
 
         var catalogBook = await GetCatalogBookAsync(resolvedBookId!, cancellationToken);
+        if (catalogBook is null && !string.IsNullOrWhiteSpace(request.Isbn))
+        {
+            var fallbackBookId = await GetBookIdByIsbnAsync(request.Isbn, cancellationToken);
+            if (fallbackBookId is not null)
+            {
+                resolvedBookId = fallbackBookId.Value.ToString();
+                catalogBook = await GetCatalogBookAsync(resolvedBookId, cancellationToken);
+            }
+        }
         if (catalogBook is null)
         {
             return NotFound(new { Message = $"Book '{resolvedBookId}' not found in catalog." });
@@ -2768,53 +2777,63 @@ public sealed class CirculationController : ControllerBase
             var client = _httpClientFactory.CreateClient();
             ForwardAuthorizationHeader(client);
 
-            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/{numericBookId}", cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            async Task<BookInfo?> TryReadBookAsync(HttpResponseMessage response)
             {
-                response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
-                    response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+                    return null;
                 }
-            }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                return null;
-            }
-
-            using var document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in document.RootElement.EnumerateArray())
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(body))
                 {
-                    var candidateId = ReadInt(item, "id", "Id", "bookId", "BookId");
-                    if (candidateId == numericBookId)
+                    return null;
+                }
+
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in document.RootElement.EnumerateArray())
                     {
-                        return JsonSerializer.Deserialize<BookInfo>(
-                            item.GetRawText(),
-                            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                        var candidateId = ReadInt(item, "id", "Id", "bookId", "BookId");
+                        if (candidateId == numericBookId)
+                        {
+                            return JsonSerializer.Deserialize<BookInfo>(
+                                item.GetRawText(),
+                                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                        }
                     }
+
+                    return null;
+                }
+
+                var rootId = ReadInt(document.RootElement, "id", "Id", "bookId", "BookId");
+                if (rootId == numericBookId)
+                {
+                    return JsonSerializer.Deserialize<BookInfo>(
+                        document.RootElement.GetRawText(),
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
                 }
 
                 return null;
             }
 
-            var rootId = ReadInt(document.RootElement, "id", "Id", "bookId", "BookId");
-            if (rootId == numericBookId)
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/{numericBookId}", cancellationToken);
+            var found = await TryReadBookAsync(response);
+            if (found is not null)
             {
-                return JsonSerializer.Deserialize<BookInfo>(
-                    document.RootElement.GetRawText(),
-                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                return found;
             }
 
-            return null;
+            response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            found = await TryReadBookAsync(response);
+            if (found is not null)
+            {
+                return found;
+            }
+
+            response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            return await TryReadBookAsync(response);
         }
         catch
         {
