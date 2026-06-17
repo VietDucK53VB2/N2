@@ -460,13 +460,72 @@ export const useAppStore = defineStore('app', () => {
     return parsed
   }
 
+  function normalizePriceSettings(input = {}) {
+    const fallback = priceSettings.value || {}
+    const source = input?.payload || input || {}
+    const toNumber = (value, defaultValue) => {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? parsed : defaultValue
+    }
+
+    return {
+      monthlyBorrowLimit: toNumber(
+        source.monthlyBorrowLimit ?? source.MonthlyBorrowLimit,
+        toNumber(fallback.monthlyBorrowLimit ?? fallback.MonthlyBorrowLimit, 5)
+      ),
+      borrowPricePerBook: toNumber(
+        source.borrowPricePerBook ?? source.BorrowPricePerBook,
+        toNumber(fallback.borrowPricePerBook ?? fallback.BorrowPricePerBook, 5000)
+      ),
+      dailyOverdueFine: toNumber(
+        source.dailyOverdueFine ?? source.DailyOverdueFine,
+        toNumber(fallback.dailyOverdueFine ?? fallback.DailyOverdueFine, 5000)
+      ),
+      lightDamageFine: toNumber(
+        source.lightDamageFine ?? source.LightDamageFine,
+        toNumber(fallback.lightDamageFine ?? fallback.LightDamageFine, 20000)
+      ),
+      heavyDamageFine: toNumber(
+        source.heavyDamageFine ?? source.HeavyDamageFine,
+        toNumber(fallback.heavyDamageFine ?? fallback.HeavyDamageFine, 100000)
+      ),
+      lostFine: toNumber(
+        source.lostFine ?? source.LostFine,
+        toNumber(fallback.lostFine ?? fallback.LostFine, 100000)
+      )
+    }
+  }
+
+  function getPriceSettingsFromEvents() {
+    const candidates = Array.isArray(events.value) ? [...events.value] : []
+    const latestPolicyEvent = candidates
+      .slice()
+      .reverse()
+      .find(event => event?.eventType === 'PricePolicyUpdated' || event?.eventType === 'BorrowPolicyUpdated')
+
+    if (!latestPolicyEvent) return null
+    return normalizePriceSettings(latestPolicyEvent)
+  }
+
   async function loadFines() {
     fines.value = await fetchFines()
     return fines.value
   }
 
   async function loadPriceSettings() {
-    priceSettings.value = await fetchPriceSettings()
+    const fetched = await fetchPriceSettings()
+    if (fetched) {
+      priceSettings.value = normalizePriceSettings(fetched)
+      return priceSettings.value
+    }
+
+    const fromEvents = getPriceSettingsFromEvents()
+    if (fromEvents) {
+      priceSettings.value = fromEvents
+      return priceSettings.value
+    }
+
+    priceSettings.value = normalizePriceSettings()
     return priceSettings.value
   }
 
@@ -533,7 +592,6 @@ export const useAppStore = defineStore('app', () => {
     try {
       await loadBooks()
       await loadMyTransactions()
-      await loadPriceSettings()
       if (isStaffRole()) {
         await Promise.all([
           loadAllTransactions(),
@@ -545,6 +603,7 @@ export const useAppStore = defineStore('app', () => {
         await loadEvents()
         await loadFines()
       }
+      await loadPriceSettings()
     } finally {
       loading.value = false
     }
