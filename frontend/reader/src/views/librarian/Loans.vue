@@ -95,7 +95,7 @@
                 </v-btn>
               </template>
 
-              <template v-else-if="isBorrowed(item) || isOverdue(item)">
+              <template v-else-if="isRenewPending(item)">
                 <v-btn
                   size="small"
                   color="primary"
@@ -261,6 +261,7 @@ function isBorrowed(item) { return statusOf(item) === 'Borrowed' || statusOf(ite
 function isOverdue(item) { return statusOf(item) === 'Overdue' }
 function isReturned(item) { return statusOf(item) === 'Returned' }
 function isReturnPending(item) { return statusOf(item) === 'ReturnPending' }
+function isRenewPending(item) { return statusOf(item) === 'RenewPending' }
 
 function actionKey(item, suffix) {
   return `${item.Id || item.id || 'row'}:${suffix}`
@@ -293,6 +294,7 @@ function statusLabel(item) {
   if (status === 'Pending') return 'Chờ duyệt'
   if (status === 'Borrowed') return 'Đang mượn'
   if (status === 'ReturnPending') return 'Chờ trả'
+  if (status === 'RenewPending') return 'Chờ duyệt gia hạn'
   if (status === 'Overdue') return 'Quá hạn'
   if (status === 'Returned') return 'Đã trả'
   return 'Đang xử lý'
@@ -318,6 +320,7 @@ function statusDetail(item = {}) {
 
   if (isPending(item)) return 'Chưa bắt đầu tính thời gian mượn'
   if (isReturnPending(item)) return borrowedAt ? `Đã mượn: ${formatDurationText(borrowedAt, now)}` : 'Đang chờ trả'
+  if (isRenewPending(item)) return borrowedAt ? `Đang chờ duyệt gia hạn: ${formatDurationText(borrowedAt, now)}` : 'Đang chờ duyệt gia hạn'
   if (isReturned(item)) {
     if (borrowedAt && returnedAt) return `Đã trả sau: ${formatDurationText(borrowedAt, returnedAt)}`
     return 'Đã trả'

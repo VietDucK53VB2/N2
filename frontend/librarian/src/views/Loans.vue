@@ -80,7 +80,7 @@
                 <CloseOutlined /> Từ chối
               </a-button>
             </a-space>
-            <a-space v-else-if="store.isBorrowed(record) || store.isOverdue(record)">
+            <a-space v-else-if="isRenewPending(record)">
               <a-button type="primary" size="small" :loading="actionId === record.Id + 're'" @click="doRenew(record)">
                 <ReloadOutlined /> Duyệt gia hạn
               </a-button>
@@ -398,6 +398,7 @@ function statusColor(record) {
 function statusLabel(record) {
   if (store.isPending(record)) return 'Chờ duyệt'
   if (store.isReturnPending(record)) return 'Chờ kiểm tra trả'
+  if (isRenewPending(record)) return 'Chờ duyệt gia hạn'
   if (store.isOverdue(record)) return 'Quá hạn'
   if (store.isReturned(record)) return 'Đã trả'
   return 'Đang mượn'
@@ -416,6 +417,10 @@ function statusDetail(record) {
     return `Đã mượn: ${formatDurationText(borrowedAt, new Date())}`
   }
 
+  if (isRenewPending(record)) {
+    return `Đang chờ duyệt gia hạn: ${formatDurationText(borrowedAt, new Date())}`
+  }
+
   if (store.isReturned(record)) {
     const returnedAt = record.ReturnedAt || record.returnedAt
     return returnedAt
@@ -428,6 +433,10 @@ function statusDetail(record) {
   }
 
   return `Còn lại: ${formatDurationText(new Date(), dueAt)}`
+}
+
+function isRenewPending(record) {
+  return store.statusOf(record) === 'RenewPending'
 }
 
 onMounted(() => {

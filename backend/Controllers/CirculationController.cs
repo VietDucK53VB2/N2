@@ -228,6 +228,226 @@ public sealed class CirculationController : ControllerBase
         return await RequestReturnAsync(transaction, cancellationToken);
     }
 
+    [HttpPost("transactions/{id:guid}/cancel-borrow")]
+    public async Task<ActionResult> CancelBorrowAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status != "Pending")
+        {
+            return BadRequest(new { Message = "Only pending borrow requests can be cancelled." });
+        }
+
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("borrow.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "borrow-cancelled",
+            Title = "Hủy mượn sách",
+            Message = "Yêu cầu mượn sách đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+
+        _dbContext.BorrowTransactions.Remove(transaction);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Borrow request cancelled.", TransactionId = id });
+    }
+
+    [HttpPost("transactions/{id:guid}/cancel-return")]
+    public async Task<ActionResult> CancelReturnAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.Status != "ReturnPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for return approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("return.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt,
+            Status = transaction.Status
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "return-cancelled",
+            Title = "Hủy trả sách",
+            Message = "Yêu cầu trả sách đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Return request cancelled.", TransactionId = id, Status = transaction.Status });
+    }
+
+    [HttpPost("transactions/{id:guid}/renew/request")]
+    public async Task<ActionResult> RequestRenewAsync(
+        Guid id,
+        [FromBody] RenewRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status == "Returned")
+        {
+            return BadRequest(new { Message = "Returned transactions cannot be renewed." });
+        }
+
+        if (transaction.Status == "RenewPending")
+        {
+            return Accepted(new
+            {
+                Message = "Renew request is already waiting for approval.",
+                TransactionId = transaction.Id,
+                Status = transaction.Status
+            });
+        }
+
+        if (transaction.Status == "Pending" || transaction.Status == "ReturnPending")
+        {
+            return BadRequest(new { Message = "Only active borrow transactions can be renewed." });
+        }
+
+        var extraDays = Math.Clamp(request?.ExtraDays ?? 7, 1, 60);
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? $"Gia hạn thêm {extraDays} ngày" : request!.Reason!.Trim();
+        transaction.Status = "RenewPending";
+
+        var requestedAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("renew.requested", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            ExtraDays = extraDays,
+            Reason = reason,
+            RequestedAt = requestedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-requested",
+            Title = "Chờ duyệt gia hạn",
+            Message = $"Yêu cầu gia hạn {extraDays} ngày đã được gửi tới thủ thư.",
+            VisibleToReader = true,
+            CreatedAt = requestedAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Accepted(new
+        {
+            Message = "Renew request waiting for librarian approval.",
+            TransactionId = transaction.Id,
+            Status = transaction.Status,
+            ExtraDays = extraDays
+        });
+    }
+
+    [HttpPost("transactions/{id:guid}/renew/cancel")]
+    public async Task<ActionResult> CancelRenewAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.Status != "RenewPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for renewal approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("renew.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt,
+            Status = transaction.Status
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-cancelled",
+            Title = "Hủy gia hạn",
+            Message = "Yêu cầu gia hạn đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Renew request cancelled.", TransactionId = id, Status = transaction.Status });
+    }
+
     [HttpPost("transactions/{id:guid}/return/approve")]
     [HttpPost("transactions/{id:guid}/confirm-return")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
@@ -275,6 +495,11 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Returned transactions cannot be renewed." });
         }
 
+        if (transaction.Status == "ReturnPending")
+        {
+            return BadRequest(new { Message = "Return requests must be resolved before renewal." });
+        }
+
         var extraDays = Math.Clamp(request?.ExtraDays ?? 7, 1, 60);
         var reason = string.IsNullOrWhiteSpace(request?.Reason) ? $"Gia hạn thêm {extraDays} ngày" : request!.Reason!.Trim();
         var dueAt = transaction.DueAt.Kind == DateTimeKind.Utc
@@ -312,7 +537,8 @@ public sealed class CirculationController : ControllerBase
         {
             message = "Transaction renewed.",
             transactionId = transaction.Id,
-            dueAt = transaction.DueAt
+            dueAt = transaction.DueAt,
+            status = transaction.Status
         });
     }
 
@@ -336,6 +562,12 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Returned transactions cannot be renewed." });
         }
 
+        if (transaction.Status != "RenewPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for renewal approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
         var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Không đủ điều kiện gia hạn" : request.Reason.Trim();
         var rejectedAt = DateTimeOffset.UtcNow;
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.renew.rejected", new
@@ -343,6 +575,7 @@ public sealed class CirculationController : ControllerBase
             TransactionId = transaction.Id,
             transaction.BookId,
             transaction.CardNumber,
+            Status = transaction.Status,
             Reason = reason,
             RejectedAt = rejectedAt
         }));
@@ -415,6 +648,11 @@ public sealed class CirculationController : ControllerBase
         if (transaction.Status == "Pending")
         {
             return BadRequest(new { Message = "Borrow request is still waiting for approval." });
+        }
+
+        if (transaction.Status == "RenewPending")
+        {
+            return BadRequest(new { Message = "Renew requests must be resolved before requesting return." });
         }
 
         if (transaction.Status == "ReturnPending")
@@ -656,6 +894,7 @@ public sealed class CirculationController : ControllerBase
                 FineAmount = t.FineAmount,
                 Status = t.Status == "Pending" ? "Pending" :
                          t.Status == "ReturnPending" ? "ReturnPending" :
+                         t.Status == "RenewPending" ? "RenewPending" :
                          t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
                          t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
             })
@@ -1069,15 +1308,48 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("events")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<IReadOnlyList<object>>> GetPublishedEventsAsync(
         [FromQuery] int? pageSize,
         CancellationToken cancellationToken)
     {
         var limit = Math.Clamp(pageSize ?? 100, 1, 500);
-        var events = await _dbContext.PublishedEventLogs
+        var eventsQuery = _dbContext.PublishedEventLogs
             .AsNoTracking()
-            .OrderByDescending(e => e.PublishedAt)
+            .OrderByDescending(e => e.PublishedAt);
+
+        if (!IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
+                ?? GetClaimValue("sub")
+                ?? GetClaimValue("id")
+                ?? GetClaimValue("userId");
+
+            var readerTransactionIds = await _dbContext.BorrowTransactions
+                .AsNoTracking()
+                .Where(item =>
+                    (!string.IsNullOrWhiteSpace(tokenCardNumber) && item.CardNumber == tokenCardNumber) ||
+                    (!string.IsNullOrWhiteSpace(tokenUserId) && item.UserId == tokenUserId))
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+
+            var scannedEvents = await eventsQuery
+                .Take(Math.Clamp(limit * 6, limit, 1000))
+                .Select(e => new { e.Id, e.SourceService, e.EventType, e.PayloadJson, e.PublishedAt })
+                .ToListAsync(cancellationToken);
+
+            var filtered = scannedEvents
+                .Where(item => EventBelongsToReader(item.PayloadJson, tokenCardNumber, tokenUserId, readerTransactionIds))
+                .Take(limit)
+                .ToList();
+
+            return Ok(filtered);
+        }
+
+        var events = await eventsQuery
             .Take(limit)
             .Select(e => new { e.Id, e.SourceService, e.EventType, e.PayloadJson, e.PublishedAt })
             .ToListAsync(cancellationToken);
@@ -2798,6 +3070,47 @@ public sealed class CirculationController : ControllerBase
     }
 
     private sealed record ReaderIdentityInfo(string CardNumber, string FullName, string Username, string Id, string Email);
+
+    private static bool EventBelongsToReader(
+        string payloadJson,
+        string? tokenCardNumber,
+        string? tokenUserId,
+        IReadOnlyCollection<Guid> transactionIds)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+
+            var eventCardNumber = ReadString(root, "cardNumber", "CardNumber");
+            if (!string.IsNullOrWhiteSpace(tokenCardNumber) &&
+                !string.IsNullOrWhiteSpace(eventCardNumber) &&
+                string.Equals(eventCardNumber, tokenCardNumber, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var eventUserId = ReadString(root, "userId", "UserId");
+            if (!string.IsNullOrWhiteSpace(tokenUserId) &&
+                !string.IsNullOrWhiteSpace(eventUserId) &&
+                string.Equals(eventUserId, tokenUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var transactionIdText = ReadString(root, "transactionId", "TransactionId");
+            return Guid.TryParse(transactionIdText, out var transactionId) && transactionIds.Contains(transactionId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static ReviewDto? TryReadReview(string payloadJson)
     {

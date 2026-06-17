@@ -387,6 +387,34 @@ export async function returnTransaction(transactionId) {
   return authFetchWithFallback(`/transactions/${transactionId}/return`, { method: 'POST' })
 }
 
+export async function cancelBorrowRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/cancel-borrow`, { method: 'POST' })
+}
+
+export async function cancelReturnRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/cancel-return`, { method: 'POST' })
+}
+
+export async function requestRenewal(transactionId, extraDays = 7, reason = '') {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/renew/request`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ExtraDays: extraDays,
+      Reason: reason,
+      extraDays,
+      reason
+    })
+  })
+}
+
+export async function cancelRenewRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/renew/cancel`, { method: 'POST' })
+}
+
 export async function payFine(fineId) {
   return requestFinePayment(fineId)
 }

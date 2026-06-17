@@ -24,5 +24,5 @@ public sealed class BorrowTransaction
 
     public decimal FineAmount { get; set; }
 
-    public string Status { get; set; } = "Pending"; // Pending, Borrowed, ReturnPending, Overdue, Returned
+    public string Status { get; set; } = "Pending"; // Pending, Borrowed, ReturnPending, RenewPending, Overdue, Returned
 }

@@ -50,6 +50,37 @@
       </v-card-text>
     </v-card>
 
+    <v-card rounded="xl" elevation="1" class="mb-5">
+      <v-card-title class="d-flex align-center justify-space-between">
+        <span class="font-weight-bold">Lịch sử thao tác</span>
+        <v-chip size="small" variant="tonal">{{ activityEntries.length }} mục</v-chip>
+      </v-card-title>
+      <v-card-text class="pt-0">
+        <v-list lines="two" density="comfortable">
+          <v-list-item
+            v-for="item in activityEntries"
+            :key="item.id"
+            rounded="lg"
+            class="mb-2"
+          >
+            <template #prepend>
+              <v-avatar :color="item.color" size="36" variant="tonal" class="mr-3">
+                <v-icon :icon="item.icon" size="18" />
+              </v-avatar>
+            </template>
+            <v-list-item-title class="font-weight-bold">{{ item.title }}</v-list-item-title>
+            <v-list-item-subtitle>{{ item.message }}</v-list-item-subtitle>
+            <template #append>
+              <span class="text-caption text-grey">{{ formatDateTime(item.createdAt) }}</span>
+            </template>
+          </v-list-item>
+          <v-alert v-if="!activityEntries.length" type="info" variant="tonal">
+            Chưa có lịch sử thao tác nào.
+          </v-alert>
+        </v-list>
+      </v-card-text>
+    </v-card>
+
     <v-card rounded="xl" elevation="1">
       <v-card-title class="d-flex align-center justify-space-between">
         <span class="font-weight-bold">Lịch sử giao dịch</span>
@@ -133,7 +164,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { titleColor, formatDate, formatMoney } from '@/utils/helpers'
+import { titleColor, formatDate, formatDateTime, formatMoney } from '@/utils/helpers'
 
 const store = useAppStore()
 const loading = ref(false)
@@ -177,6 +208,30 @@ const notifications = computed(() => {
     })
     .filter(x => x.message || x.title)
     .slice(0, 20)
+})
+
+const activityEntries = computed(() => {
+  return (store.events || [])
+    .map((item, index) => {
+      const payload = item.payload || {}
+      const eventType = String(item.eventType || '').toLowerCase()
+      const title = payload.Title || payload.title || eventType || 'Thao tác'
+      const message = payload.Message || payload.message || payload.Reason || payload.reason || 'Đã lưu lịch sử'
+      const createdAt = payload.CreatedAt || payload.createdAt || item.publishedAt
+      const isDanger = eventType.includes('cancel') || eventType.includes('reject') || eventType.includes('rejected') || eventType.includes('remove')
+      const isWarning = eventType.includes('renew') || eventType.includes('request') || eventType.includes('pending')
+      const isSuccess = eventType.includes('approved') || eventType.includes('borrowed') || eventType.includes('returned') || eventType.includes('paid')
+      return {
+        id: `${item.id || index}`,
+        title,
+        message,
+        createdAt,
+        icon: isDanger ? 'mdi-close-circle-outline' : isWarning ? 'mdi-clock-outline' : isSuccess ? 'mdi-check-circle-outline' : 'mdi-history',
+        color: isDanger ? 'error' : isWarning ? 'warning' : isSuccess ? 'success' : 'info'
+      }
+    })
+    .filter(x => x.message || x.title)
+    .slice(0, 40)
 })
 
 const latestRejectLabel = computed(() => {

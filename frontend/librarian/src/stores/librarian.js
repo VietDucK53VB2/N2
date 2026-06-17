@@ -180,7 +180,7 @@ function parseTime(value) {
 }
 
 function isTimeBasedOverdue(transaction = {}) {
-  if (isPending(transaction) || isReturned(transaction) || isReturnPending(transaction)) {
+  if (isPending(transaction) || isReturned(transaction) || isReturnPending(transaction) || isRenewPending(transaction)) {
     return false
   }
   const dueAt = parseTime(dueAtOf(transaction))
@@ -207,8 +207,12 @@ function isReturnPending(transaction) {
   return statusOf(transaction) === 'ReturnPending'
 }
 
+function isRenewPending(transaction) {
+  return statusOf(transaction) === 'RenewPending'
+}
+
 function isActiveLoan(transaction) {
-  return isBorrowed(transaction) || isOverdue(transaction)
+  return isBorrowed(transaction) || isOverdue(transaction) || isReturnPending(transaction) || isRenewPending(transaction)
 }
 
 function cardNumberOf(transaction = {}) {

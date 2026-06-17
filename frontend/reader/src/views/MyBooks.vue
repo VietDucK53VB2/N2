@@ -74,15 +74,63 @@
             />
 
             <v-btn
+              v-if="store.isPending(tx)"
               block
               variant="tonal"
-              color="success"
-              prepend-icon="mdi-undo"
-              :disabled="store.isPending(tx) || store.isReturnPending(tx)"
-              @click="openReturn(tx)"
+              color="error"
+              prepend-icon="mdi-close-circle-outline"
+              @click="openCancelBorrow(tx)"
             >
-              {{ returnButtonText(tx) }}
+              Hủy mượn
             </v-btn>
+            <v-btn
+              v-else-if="store.isReturnPending(tx)"
+              block
+              variant="tonal"
+              color="warning"
+              prepend-icon="mdi-close-circle-outline"
+              @click="openCancelReturn(tx)"
+            >
+              Hủy trả
+            </v-btn>
+            <template v-else>
+              <template v-if="isRenewPending(tx)">
+                <v-btn
+                  block
+                  variant="tonal"
+                  color="grey-darken-1"
+                  prepend-icon="mdi-close-circle-outline"
+                  @click="openCancelRenew(tx)"
+                >
+                  Hủy gia hạn
+                </v-btn>
+                <div class="text-caption text-grey-darken-1 mt-2">
+                  Đang chờ thủ thư duyệt gia hạn.
+                </div>
+              </template>
+              <template v-else>
+                <v-btn
+                  block
+                  variant="tonal"
+                  color="success"
+                  prepend-icon="mdi-undo"
+                  @click="openReturn(tx)"
+                >
+                  {{ returnButtonText(tx) }}
+                </v-btn>
+                <v-btn
+                  v-if="canRequestRenew(tx)"
+                  block
+                  class="mt-2"
+                  variant="tonal"
+                  color="indigo"
+                  prepend-icon="mdi-calendar-clock"
+                  @click="openRenew(tx)"
+                >
+                  Gia hạn
+                </v-btn>
+              </template>
+            </template>
             <v-btn
               block
               class="mt-2"
@@ -120,6 +168,47 @@
           <v-spacer />
           <v-btn variant="text" @click="returnDialog = false">Hủy</v-btn>
           <v-btn color="success" :loading="returning" @click="submitReturn">Gửi yêu cầu</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="actionDialog" max-width="480">
+      <v-card rounded="xl">
+        <v-card-title class="text-h6 font-weight-bold">{{ actionTitle }}</v-card-title>
+        <v-card-text>
+          <v-alert v-if="actionError" type="error" variant="tonal" density="compact" class="mb-3">
+            {{ actionError }}
+          </v-alert>
+          <v-alert type="info" variant="tonal" class="mb-4">
+            {{ actionMessage }}
+          </v-alert>
+          <template v-if="actionType === 'renew'">
+            <v-text-field
+              v-model="renewDays"
+              type="number"
+              min="1"
+              max="60"
+              label="Số ngày gia hạn"
+              variant="outlined"
+              density="comfortable"
+              class="mb-3"
+            />
+            <v-textarea
+              v-model="renewReason"
+              label="Lý do gia hạn"
+              rows="3"
+              auto-grow
+              hide-details
+              variant="outlined"
+            />
+          </template>
+        </v-card-text>
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn variant="text" @click="closeActionDialog">Hủy</v-btn>
+          <v-btn :color="actionColor" :loading="actionLoading" @click="submitAction">
+            {{ actionConfirmLabel }}
+          </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -163,6 +252,10 @@ import {
   getReaderCard,
   returnBook as apiReturn,
   returnTransaction,
+  cancelBorrowRequest as apiCancelBorrow,
+  cancelReturnRequest as apiCancelReturn,
+  requestRenewal as apiRequestRenewal,
+  cancelRenewRequest as apiCancelRenew,
   reviewBook as apiReviewBook,
   fetchBookReviews
 } from '@/utils/api'
@@ -177,6 +270,13 @@ const returnDialog = ref(false)
 const returnBookData = ref(null)
 const returning = ref(false)
 const returnError = ref('')
+const actionDialog = ref(false)
+const actionType = ref('')
+const actionTx = ref(null)
+const actionLoading = ref(false)
+const actionError = ref('')
+const renewDays = ref(7)
+const renewReason = ref('')
 const snackbar = ref(false)
 const snackbarText = ref('')
 const snackbarColor = ref('success')
@@ -213,6 +313,7 @@ const returnBook = computed(() => returnBookData.value)
 function statusColor(tx) {
   if (store.isPending(tx)) return 'warning'
   if (store.isReturnPending(tx)) return 'deep-purple'
+  if (isRenewPending(tx)) return 'indigo'
   if (store.isOverdue(tx)) return 'error'
   const d = daysLeft(tx.DueAt || tx.dueAt)
   return d !== null && d <= 3 ? 'warning' : 'info'
@@ -221,6 +322,7 @@ function statusColor(tx) {
 function statusIcon(tx) {
   if (store.isPending(tx)) return 'mdi-clock-outline'
   if (store.isReturnPending(tx)) return 'mdi-book-clock'
+  if (isRenewPending(tx)) return 'mdi-calendar-clock'
   if (store.isOverdue(tx)) return 'mdi-alert'
   return 'mdi-calendar'
 }
@@ -228,6 +330,7 @@ function statusIcon(tx) {
 function statusText(tx) {
   if (store.isPending(tx)) return 'Chờ duyệt mượn'
   if (store.isReturnPending(tx)) return 'Chờ xác nhận trả'
+  if (isRenewPending(tx)) return 'Chờ duyệt gia hạn'
   if (store.isOverdue(tx)) {
     const dueAt = tx.DueAt || tx.dueAt
     return dueAt ? `Quá hạn ${formatDurationText(dueAt, nowTick.value)}` : 'Quá hạn'
@@ -281,6 +384,7 @@ function canReview(tx) {
 function returnButtonText(tx) {
   if (store.isPending(tx)) return 'Chờ duyệt mượn'
   if (store.isReturnPending(tx)) return 'Chờ thủ thư xác nhận'
+  if (isRenewPending(tx)) return 'Trả sách'
   return 'Trả sách'
 }
 
@@ -302,15 +406,135 @@ function progressPercent(tx) {
 function progressColor(tx) {
   if (store.isPending(tx)) return 'warning'
   if (store.isReturnPending(tx)) return 'deep-purple'
+  if (isRenewPending(tx)) return 'indigo'
   if (store.isOverdue(tx)) return 'error'
   const d = daysLeft(tx.DueAt || tx.dueAt)
   return d !== null && d <= 3 ? 'warning' : 'primary'
+}
+
+function isRenewPending(tx) {
+  return store.statusOf(tx) === 'RenewPending'
+}
+
+function canRequestRenew(tx) {
+  return !store.isPending(tx) && !store.isReturnPending(tx) && !isRenewPending(tx) && !store.isReturned(tx)
 }
 
 function openReturn(tx) {
   returnError.value = ''
   returnBookData.value = tx
   returnDialog.value = true
+}
+
+function openCancelBorrow(tx) {
+  openActionDialog('cancel-borrow', tx)
+}
+
+function openCancelReturn(tx) {
+  openActionDialog('cancel-return', tx)
+}
+
+function openRenew(tx) {
+  renewDays.value = 7
+  renewReason.value = ''
+  openActionDialog('renew', tx)
+}
+
+function openCancelRenew(tx) {
+  openActionDialog('cancel-renew', tx)
+}
+
+function openActionDialog(type, tx) {
+  actionType.value = type
+  actionTx.value = tx
+  actionError.value = ''
+  actionDialog.value = true
+}
+
+function closeActionDialog() {
+  actionDialog.value = false
+  actionTx.value = null
+  actionType.value = ''
+  actionError.value = ''
+  actionLoading.value = false
+}
+
+const actionTitle = computed(() => {
+  if (actionType.value === 'cancel-borrow') return 'Hủy yêu cầu mượn'
+  if (actionType.value === 'cancel-return') return 'Hủy yêu cầu trả'
+  if (actionType.value === 'cancel-renew') return 'Hủy yêu cầu gia hạn'
+  if (actionType.value === 'renew') return 'Gửi yêu cầu gia hạn'
+  return 'Xác nhận thao tác'
+})
+
+const actionMessage = computed(() => {
+  const tx = actionTx.value
+  const title = tx?.TenSach || tx?.tenSach || 'cuốn sách này'
+  if (actionType.value === 'cancel-borrow') return `Hủy yêu cầu mượn "${title}" khỏi hàng chờ thủ thư.`
+  if (actionType.value === 'cancel-return') return `Hủy yêu cầu trả "${title}" để tiếp tục giữ sách.`
+  if (actionType.value === 'cancel-renew') return `Hủy yêu cầu gia hạn "${title}" đang chờ thủ thư duyệt.`
+  if (actionType.value === 'renew') return `Gửi yêu cầu gia hạn cho "${title}" và chờ thủ thư duyệt.`
+  return 'Bạn có chắc muốn thực hiện thao tác này?'
+})
+
+const actionConfirmLabel = computed(() => {
+  if (actionType.value === 'cancel-borrow' || actionType.value === 'cancel-return' || actionType.value === 'cancel-renew') return 'Xác nhận hủy'
+  if (actionType.value === 'renew') return 'Gửi yêu cầu'
+  return 'Xác nhận'
+})
+
+const actionColor = computed(() => {
+  if (actionType.value === 'renew') return 'indigo'
+  return 'error'
+})
+
+async function submitAction() {
+  const tx = actionTx.value
+  if (!tx) return
+  const transactionId = tx.Id || tx.id
+  if (!transactionId) {
+    actionError.value = 'Không tìm thấy mã giao dịch.'
+    return
+  }
+
+  const currentAction = actionType.value
+  actionLoading.value = true
+  actionError.value = ''
+  try {
+    let response
+    if (currentAction === 'cancel-borrow') {
+      response = await apiCancelBorrow(transactionId)
+    } else if (currentAction === 'cancel-return') {
+      response = await apiCancelReturn(transactionId)
+    } else if (currentAction === 'renew') {
+      const days = Math.min(60, Math.max(1, Number(renewDays.value) || 7))
+      response = await apiRequestRenewal(transactionId, days, renewReason.value || '')
+    } else if (currentAction === 'cancel-renew') {
+      response = await apiCancelRenew(transactionId)
+    } else {
+      actionError.value = 'Thao tác không hợp lệ.'
+      return
+    }
+
+    if (response.ok) {
+      closeActionDialog()
+      snackbarText.value =
+        currentAction === 'renew'
+          ? 'Đã gửi yêu cầu gia hạn. Vui lòng chờ thủ thư duyệt.'
+          : 'Đã cập nhật yêu cầu thành công.'
+      snackbarColor.value = 'success'
+      snackbar.value = true
+      await loadData()
+      return
+    }
+
+    const data = await response.json().catch(() => null)
+    actionError.value = data?.message || data?.Message || 'Không thể thực hiện thao tác này.'
+  } catch {
+    actionError.value = 'Không kết nối được máy chủ. Vui lòng thử lại.'
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function submitReturn() {

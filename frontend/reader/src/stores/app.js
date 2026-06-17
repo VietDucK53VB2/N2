@@ -208,7 +208,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function isTimeBasedOverdue(transaction = {}) {
-    if (isPending(transaction) || isReturned(transaction) || isReturnPending(transaction)) {
+    if (isPending(transaction) || isReturned(transaction) || isReturnPending(transaction) || isRenewPending(transaction)) {
       return false
     }
     const dueAt = parseTime(dueAtOf(transaction))
@@ -235,8 +235,12 @@ export const useAppStore = defineStore('app', () => {
     return statusOf(transaction) === 'ReturnPending'
   }
 
+  function isRenewPending(transaction) {
+    return statusOf(transaction) === 'RenewPending'
+  }
+
   function isActiveLoan(transaction) {
-    return isBorrowed(transaction) || isOverdue(transaction) || isReturnPending(transaction)
+    return isBorrowed(transaction) || isOverdue(transaction) || isReturnPending(transaction) || isRenewPending(transaction)
   }
 
   function isFinePaid(fine = {}) {
@@ -405,11 +409,6 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function loadEvents() {
-    if (!isStaffRole()) {
-      events.value = []
-      return []
-    }
-    const card = getReaderCard()
     const payloads = await fetchEvents()
     const parsed = payloads
       .map(normalizeEvent)
@@ -419,11 +418,6 @@ export const useAppStore = defineStore('app', () => {
         } catch {
           return { ...event, payload: {} }
         }
-      })
-      .filter(event => {
-        const payload = event.payload || {}
-        const cardNumber = payload.CardNumber || payload.cardNumber || payload.ReaderCardNumber || payload.readerCardNumber || ''
-        return !card || !cardNumber || String(cardNumber) === String(card)
       })
     events.value = parsed
     return parsed
@@ -505,7 +499,7 @@ export const useAppStore = defineStore('app', () => {
         ])
       } else {
         allTransactions.value = []
-        events.value = []
+        await loadEvents()
         await loadFines()
       }
     } finally {
@@ -519,7 +513,7 @@ export const useAppStore = defineStore('app', () => {
     favorites,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, myPendingFinePayments, myPaidFines, totalUnpaidFines,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, isFinePaymentPending, cardNumberOf, bookIdOf,
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isRenewPending, isActiveLoan, isFinePaid, isFinePaymentPending, cardNumberOf, bookIdOf,
     loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     addToCart, removeFromCart, clearCart,
     isFavorite, toggleFavorite, removeFavorite,
