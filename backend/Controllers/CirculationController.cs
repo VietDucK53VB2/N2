@@ -17,11 +17,15 @@ namespace N2.Circulation.Api.Controllers;
 [Route("api/circulation")]
 public sealed class CirculationController : ControllerBase
 {
-    private const decimal DailyFineRate = 5000m;
-    private const decimal DailyBorrowRate = 5000m;
     private const int DefaultBorrowDays = 14;
     private const int DefaultMonthlyBorrowLimit = 5;
+    private const decimal DefaultBorrowPricePerBook = 5000m;
+    private const decimal DefaultDailyOverdueFine = 5000m;
+    private const decimal DefaultLightDamageFine = 20000m;
+    private const decimal DefaultHeavyDamageFine = 100000m;
+    private const decimal DefaultLostFine = 100000m;
     private const string BorrowPolicyEventType = "BorrowPolicyUpdated";
+    private const string PricePolicyEventType = "PricePolicyUpdated";
     private readonly CirculationDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
@@ -699,8 +703,11 @@ public sealed class CirculationController : ControllerBase
         string condition = "Good",
         string? conditionNote = null)
     {
+        var pricePolicy = await GetPricePolicyAsync(cancellationToken);
         var overdueDays = Math.Max(0, (int)Math.Ceiling((returnedAt - transaction.DueAt).TotalDays));
-        var fineAmount = overdueDays * DailyFineRate;
+        var overdueFineAmount = overdueDays * pricePolicy.DailyOverdueFine;
+        var conditionFineAmount = GetReturnConditionFine(condition, pricePolicy);
+        var fineAmount = overdueFineAmount + conditionFineAmount;
 
         var shouldReturnCopyToCatalog = ShouldReturnCopyToCatalog(condition);
         if (shouldReturnCopyToCatalog)
@@ -729,7 +736,7 @@ public sealed class CirculationController : ControllerBase
         transaction.FineAmount = fineAmount;
         transaction.Status = "Returned";
 
-        if (fineAmount > 0)
+        if (overdueFineAmount > 0)
         {
             _dbContext.FineCharges.Add(new FineCharge
             {
@@ -737,10 +744,26 @@ public sealed class CirculationController : ControllerBase
                 BorrowTransactionId = transaction.Id,
                 UserId = transaction.UserId ?? string.Empty,
                 CardNumber = transaction.CardNumber,
-                Amount = fineAmount,
+                Amount = overdueFineAmount,
                 Reason = overdueDays > 0
                     ? $"Phạt trả quá hạn {overdueDays} ngày"
                     : "Phạt trả quá hạn",
+                CreatedAt = returnedAt,
+                PaymentStatus = "Unpaid",
+                PaidAt = null
+            });
+        }
+
+        if (conditionFineAmount > 0)
+        {
+            _dbContext.FineCharges.Add(new FineCharge
+            {
+                Id = Guid.NewGuid(),
+                BorrowTransactionId = transaction.Id,
+                UserId = transaction.UserId ?? string.Empty,
+                CardNumber = transaction.CardNumber,
+                Amount = conditionFineAmount,
+                Reason = GetReturnConditionFineReason(condition, conditionFineAmount),
                 CreatedAt = returnedAt,
                 PaymentStatus = "Unpaid",
                 PaidAt = null
@@ -776,6 +799,8 @@ public sealed class CirculationController : ControllerBase
             ConditionNote = conditionNote,
             ReturnedToCatalog = shouldReturnCopyToCatalog,
             InventoryAction = shouldReturnCopyToCatalog ? "ReturnedToShelf" : "RemovedFromCirculation",
+            OverdueFineAmount = overdueFineAmount,
+            ConditionFineAmount = conditionFineAmount,
             CheckedAt = DateTimeOffset.UtcNow
         }));
 
@@ -1940,11 +1965,11 @@ public sealed class CirculationController : ControllerBase
             return StatusCode(catalogBorrowResult.StatusCode, new { Message = catalogBorrowResult.Message });
 
         var approvedAt = DateTime.UtcNow;
+        var pricePolicy = await GetPricePolicyAsync(cancellationToken);
         var requestedBorrowedAt = NormalizeUtc(transaction.BorrowedAt);
         var requestedDueAt = NormalizeUtc(transaction.DueAt);
         var requestedDuration = requestedDueAt - requestedBorrowedAt;
-        var borrowDays = Math.Max(1, (int)Math.Ceiling(requestedDuration.TotalDays));
-        var borrowRevenue = borrowDays * DailyBorrowRate;
+        var borrowRevenue = pricePolicy.BorrowPricePerBook;
         transaction.Status = "Borrowed";
         transaction.BorrowedAt = approvedAt;
         transaction.DueAt = requestedDuration > TimeSpan.Zero
@@ -1958,7 +1983,7 @@ public sealed class CirculationController : ControllerBase
             UserId = transaction.UserId,
             CardNumber = transaction.CardNumber,
             Amount = borrowRevenue,
-            Description = $"Thu mượn {borrowDays} ngày",
+            Description = $"Thu mượn 1 cuốn",
             CreatedAt = approvedAt
         });
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.approved", new { TransactionId = id, ApprovedAt = new DateTimeOffset(approvedAt, TimeSpan.Zero) }));
@@ -2004,17 +2029,56 @@ public sealed class CirculationController : ControllerBase
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
     public async Task<ActionResult<object>> GetBorrowPolicyAsync(CancellationToken cancellationToken)
     {
-        var monthlyBorrowLimit = await GetMonthlyBorrowLimitAsync(cancellationToken);
-        return Ok(new { monthlyBorrowLimit });
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return Ok(new { monthlyBorrowLimit = policy.MonthlyBorrowLimit });
     }
 
     [HttpPut("settings/borrow-policy")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
     public async Task<ActionResult<object>> UpdateBorrowPolicyAsync([FromBody] BorrowPolicyRequest request, CancellationToken cancellationToken)
     {
-        var monthlyBorrowLimit = Math.Clamp(request.MonthlyBorrowLimit, 1, 100);
-        await SetMonthlyBorrowLimitAsync(monthlyBorrowLimit, cancellationToken);
-        return Ok(new { message = "Borrow policy updated.", monthlyBorrowLimit });
+        var currentPolicy = await GetPricePolicyAsync(cancellationToken);
+        var updatedPolicy = currentPolicy with
+        {
+            MonthlyBorrowLimit = Math.Clamp(request.MonthlyBorrowLimit, 1, 100)
+        };
+
+        await SetPricePolicyAsync(updatedPolicy, cancellationToken);
+        return Ok(new { message = "Borrow policy updated.", monthlyBorrowLimit = updatedPolicy.MonthlyBorrowLimit });
+    }
+
+    [HttpGet("settings/prices")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult<object>> GetPricePolicySettingsAsync(CancellationToken cancellationToken)
+    {
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return Ok(new
+        {
+            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
+            borrowPricePerBook = policy.BorrowPricePerBook,
+            dailyOverdueFine = policy.DailyOverdueFine,
+            lightDamageFine = policy.LightDamageFine,
+            heavyDamageFine = policy.HeavyDamageFine,
+            lostFine = policy.LostFine
+        });
+    }
+
+    [HttpPut("settings/prices")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult<object>> UpdatePricePolicySettingsAsync([FromBody] PricePolicyRequest request, CancellationToken cancellationToken)
+    {
+        var policy = NormalizePricePolicy(request);
+        await SetPricePolicyAsync(policy, cancellationToken);
+        return Ok(new
+        {
+            message = "Price policy updated.",
+            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
+            borrowPricePerBook = policy.BorrowPricePerBook,
+            dailyOverdueFine = policy.DailyOverdueFine,
+            lightDamageFine = policy.LightDamageFine,
+            heavyDamageFine = policy.HeavyDamageFine,
+            lostFine = policy.LostFine
+        });
     }
 
     [HttpPost("transactions/{id}/reject")]
@@ -2234,6 +2298,46 @@ public sealed class CirculationController : ControllerBase
     {
         return !string.Equals(condition, "HeavyDamage", StringComparison.OrdinalIgnoreCase) &&
                !string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static decimal GetReturnConditionFine(string? condition, PricePolicyRequest pricePolicy)
+    {
+        if (string.Equals(condition, "HeavyDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.HeavyDamageFine;
+        }
+
+        if (string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.LostFine;
+        }
+
+        if (string.Equals(condition, "LightDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.LightDamageFine;
+        }
+
+        return 0m;
+    }
+
+    private static string GetReturnConditionFineReason(string? condition, decimal amount)
+    {
+        if (string.Equals(condition, "HeavyDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt hư hỏng nặng: {amount:N0} đ";
+        }
+
+        if (string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt mất sách: {amount:N0} đ";
+        }
+
+        if (string.Equals(condition, "LightDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt hư hỏng nhẹ: {amount:N0} đ";
+        }
+
+        return $"Phạt do tình trạng sách: {amount:N0} đ";
     }
 
     private static PublishedEventLog CreateEventLog<T>(string eventType, T payload)
@@ -3174,49 +3278,148 @@ public sealed class CirculationController : ControllerBase
 
     private async Task<int> GetMonthlyBorrowLimitAsync(CancellationToken cancellationToken)
     {
-        var configuredDefault = _configuration.GetValue<int?>("Borrowing:MonthlyLimit") ?? DefaultMonthlyBorrowLimit;
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return policy.MonthlyBorrowLimit;
+    }
+
+    private async Task SetMonthlyBorrowLimitAsync(int monthlyBorrowLimit, CancellationToken cancellationToken)
+    {
+        var currentPolicy = await GetPricePolicyAsync(cancellationToken);
+        var updatedPolicy = currentPolicy with
+        {
+            MonthlyBorrowLimit = Math.Clamp(monthlyBorrowLimit, 1, 100)
+        };
+
+        await SetPricePolicyAsync(updatedPolicy, cancellationToken);
+    }
+
+    private async Task<PricePolicyRequest> GetPricePolicyAsync(CancellationToken cancellationToken)
+    {
+        var configuredDefault = GetConfiguredPricePolicy();
 
         var policyEvent = await _dbContext.PublishedEventLogs
             .AsNoTracking()
-            .Where(item => item.SourceService == "N2.Circulation" && item.EventType == BorrowPolicyEventType)
+            .Where(item =>
+                item.SourceService == "N2.Circulation" &&
+                (item.EventType == PricePolicyEventType || item.EventType == BorrowPolicyEventType))
             .OrderByDescending(item => item.PublishedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (policyEvent is null)
         {
-            return Math.Clamp(configuredDefault, 1, 100);
+            return configuredDefault;
         }
 
         try
         {
             using var document = JsonDocument.Parse(policyEvent.PayloadJson);
-            var root = document.RootElement;
-            var limit = root.TryGetProperty("MonthlyBorrowLimit", out var pascalLimit)
-                ? pascalLimit.GetInt32()
-                : root.TryGetProperty("monthlyBorrowLimit", out var camelLimit)
-                    ? camelLimit.GetInt32()
-                    : configuredDefault;
-
-            return Math.Clamp(limit, 1, 100);
+            return ParsePricePolicy(document.RootElement, configuredDefault);
         }
         catch (JsonException)
         {
-            return Math.Clamp(configuredDefault, 1, 100);
+            return configuredDefault;
         }
     }
 
-    private async Task SetMonthlyBorrowLimitAsync(int monthlyBorrowLimit, CancellationToken cancellationToken)
+    private async Task SetPricePolicyAsync(PricePolicyRequest policy, CancellationToken cancellationToken)
     {
+        var normalized = NormalizePricePolicy(policy);
+
         _dbContext.PublishedEventLogs.Add(new PublishedEventLog
         {
             Id = Guid.NewGuid(),
             SourceService = "N2.Circulation",
-            EventType = BorrowPolicyEventType,
-            PayloadJson = JsonSerializer.Serialize(new { MonthlyBorrowLimit = monthlyBorrowLimit }),
+            EventType = PricePolicyEventType,
+            PayloadJson = JsonSerializer.Serialize(normalized),
             PublishedAt = DateTime.UtcNow
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private PricePolicyRequest GetConfiguredPricePolicy()
+    {
+        return NormalizePricePolicy(new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = _configuration.GetValue<int?>("Borrowing:MonthlyLimit") ?? DefaultMonthlyBorrowLimit,
+            BorrowPricePerBook = _configuration.GetValue<decimal?>("Pricing:BorrowPricePerBook") ?? DefaultBorrowPricePerBook,
+            DailyOverdueFine = _configuration.GetValue<decimal?>("Pricing:DailyOverdueFine") ?? DefaultDailyOverdueFine,
+            LightDamageFine = _configuration.GetValue<decimal?>("Pricing:LightDamageFine") ?? DefaultLightDamageFine,
+            HeavyDamageFine = _configuration.GetValue<decimal?>("Pricing:HeavyDamageFine") ?? DefaultHeavyDamageFine,
+            LostFine = _configuration.GetValue<decimal?>("Pricing:LostFine") ?? DefaultLostFine
+        });
+    }
+
+    private static PricePolicyRequest NormalizePricePolicy(PricePolicyRequest policy)
+    {
+        return new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = Math.Clamp(policy.MonthlyBorrowLimit, 1, 100),
+            BorrowPricePerBook = Math.Clamp(policy.BorrowPricePerBook, 0m, 1_000_000m),
+            DailyOverdueFine = Math.Clamp(policy.DailyOverdueFine, 0m, 1_000_000m),
+            LightDamageFine = Math.Clamp(policy.LightDamageFine, 0m, 1_000_000m),
+            HeavyDamageFine = Math.Clamp(policy.HeavyDamageFine, 0m, 1_000_000m),
+            LostFine = Math.Clamp(policy.LostFine, 0m, 1_000_000m)
+        };
+    }
+
+    private static PricePolicyRequest ParsePricePolicy(JsonElement root, PricePolicyRequest fallback)
+    {
+        return NormalizePricePolicy(new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = TryGetInt32(root, fallback.MonthlyBorrowLimit, "MonthlyBorrowLimit", "monthlyBorrowLimit", "monthly_borrow_limit"),
+            BorrowPricePerBook = TryGetDecimal(root, fallback.BorrowPricePerBook, "BorrowPricePerBook", "borrowPricePerBook", "borrow_price_per_book"),
+            DailyOverdueFine = TryGetDecimal(root, fallback.DailyOverdueFine, "DailyOverdueFine", "dailyOverdueFine", "daily_overdue_fine"),
+            LightDamageFine = TryGetDecimal(root, fallback.LightDamageFine, "LightDamageFine", "lightDamageFine", "light_damage_fine"),
+            HeavyDamageFine = TryGetDecimal(root, fallback.HeavyDamageFine, "HeavyDamageFine", "heavyDamageFine", "heavy_damage_fine"),
+            LostFine = TryGetDecimal(root, fallback.LostFine, "LostFine", "lostFine", "lost_fine")
+        });
+    }
+
+    private static int TryGetInt32(JsonElement root, int fallback, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return fallback;
+    }
+
+    private static decimal TryGetDecimal(JsonElement root, decimal fallback, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String && decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return fallback;
     }
 
     private static DateTime NormalizeUtc(DateTime date)
