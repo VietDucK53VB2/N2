@@ -246,6 +246,8 @@ export const useAppStore = defineStore('app', () => {
     return Boolean(
       fine.IsPaymentPending ||
       fine.isPaymentPending ||
+      fine.PaymentRequestedAt ||
+      fine.paymentRequestedAt ||
       fine.PaymentStatus === 'PendingApproval' ||
       fine.paymentStatus === 'PendingApproval'
     )

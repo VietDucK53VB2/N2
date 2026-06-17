@@ -39,7 +39,7 @@
     <v-main class="lib-main">
       <div class="lib-topbar">
         <div class="lib-topbar__greeting">
-          <h2 class="topbar-title">Welcome {{ displayName }} !</h2>
+          <h2 class="topbar-title">Chào mừng {{ displayName }}!</h2>
         </div>
 
         <div class="lib-topbar__actions">

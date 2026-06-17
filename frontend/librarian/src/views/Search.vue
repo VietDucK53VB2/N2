@@ -35,7 +35,7 @@
       </a-col>
     </a-row>
 
-    <a-card v-if="result" class="panel-card" :title="`Kết quả: ${result.cardNo}`">
+    <a-card v-if="result" class="panel-card" :title="`Kết quả: ${result.readerName || result.cardNo} · ${result.cardNo}`">
       <a-table :columns="cols" :data-source="result.transactions" size="small" :pagination="{ pageSize: 6 }" row-key="Id">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'Status'">
@@ -51,9 +51,9 @@
       <a-list :data-source="readers" :loading="store.loading" item-layout="horizontal">
         <template #renderItem="{ item }">
           <a-list-item class="reader-item">
-            <a-list-item-meta
-              :title="item.cardNumber"
-              :description="`${item.count} phiếu mượn · ${item.overdue > 0 ? item.overdue + ' quá hạn' : 'Bình thường'}`"
+          <a-list-item-meta
+              :title="item.readerName || item.cardNumber"
+              :description="`${item.cardNumber} · ${item.count} phiếu mượn · ${item.overdue > 0 ? item.overdue + ' quá hạn' : 'Bình thường'}`"
             />
             <template #actions>
               <a-button size="small" type="primary" ghost @click="searchByCard(item.cardNumber)">Xem</a-button>
@@ -87,6 +87,7 @@ const readers = computed(() => {
     const c = store.cardNumberOf(t)
     if (!map[c]) map[c] = { cardNumber: c, count: 0, active: 0, pending: 0, overdue: 0, returned: 0 }
     map[c].count++
+    map[c].readerName = map[c].readerName || t.ReaderName || t.readerName || t.FullName || t.fullName || t.ReaderUsername || t.readerUsername || c
     if (store.isActiveLoan(t)) map[c].active++
     if (store.isPending(t)) map[c].pending++
     if (store.isOverdue(t)) map[c].overdue++
@@ -105,6 +106,7 @@ function searchByCard(c) {
   const txs = store.transactions.filter(t => store.cardNumberOf(t) === c)
   result.value = {
     cardNo: c,
+    readerName: txs[0]?.ReaderName || txs[0]?.readerName || txs[0]?.FullName || txs[0]?.fullName || txs[0]?.ReaderUsername || txs[0]?.readerUsername || c,
     transactions: txs,
     active: txs.filter(store.isActiveLoan).length,
     overdue: txs.filter(store.isOverdue).length,

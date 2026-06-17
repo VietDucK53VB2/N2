@@ -67,7 +67,7 @@
             <MenuFoldOutlined v-else />
           </a-button>
           <div class="header-info">
-            <h3 class="header-title">Welcome {{ displayName }} !</h3>
+            <h3 class="header-title">Chào mừng {{ displayName }}!</h3>
             <p v-if="pageSub" class="header-subtitle">{{ pageSub }}</p>
           </div>
         </div>

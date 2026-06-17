@@ -163,7 +163,14 @@ function isPaid(item) {
 }
 
 function isPending(item) {
-  return Boolean(item.IsPaymentPending || item.isPaymentPending || item.PaymentStatus === 'PendingApproval' || item.paymentStatus === 'PendingApproval')
+  return Boolean(
+    item.IsPaymentPending ||
+    item.isPaymentPending ||
+    item.PaymentRequestedAt ||
+    item.paymentRequestedAt ||
+    item.PaymentStatus === 'PendingApproval' ||
+    item.paymentStatus === 'PendingApproval'
+  )
 }
 
 function fineStatusLabel(item) {
