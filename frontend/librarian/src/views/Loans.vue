@@ -6,22 +6,24 @@
         <h2>Danh sách phiếu mượn</h2>
         <p>Duyệt yêu cầu mượn, gia hạn và theo dõi các trạng thái xử lý.</p>
       </div>
-      <div class="hero-badges">
-        <div class="hero-badge">
-          <span class="badge-label">Chờ duyệt</span>
-          <strong>{{ store.pendingTx.length }}</strong>
-        </div>
-        <div class="hero-badge">
-          <span class="badge-label">Đang mượn</span>
-          <strong>{{ store.borrowedTx.length }}</strong>
-        </div>
-        <div class="hero-badge">
-          <span class="badge-label">Chờ trả</span>
-          <strong>{{ store.returnPendingTx.length }}</strong>
-        </div>
-        <div class="hero-badge alert">
-          <span class="badge-label">Quá hạn</span>
-          <strong>{{ store.overdueTx.length }}</strong>
+      <div class="hero-summary">
+        <div class="hero-badges">
+          <div class="hero-badge">
+            <span class="badge-label">Chờ duyệt</span>
+            <strong>{{ store.pendingTx.length }}</strong>
+          </div>
+          <div class="hero-badge">
+            <span class="badge-label">Đang mượn</span>
+            <strong>{{ store.borrowedTx.length }}</strong>
+          </div>
+          <div class="hero-badge">
+            <span class="badge-label">Chờ trả</span>
+            <strong>{{ store.returnPendingTx.length }}</strong>
+          </div>
+          <div class="hero-badge alert">
+            <span class="badge-label">Quá hạn</span>
+            <strong>{{ store.overdueTx.length }}</strong>
+          </div>
         </div>
       </div>
     </a-card>
@@ -451,10 +453,15 @@ onMounted(() => {
 
 .hero-card :deep(.ant-card-body) {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 20px 22px;
+  gap: 24px;
+  padding: 22px 24px;
+}
+
+.hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hero-copy h2 {
@@ -477,11 +484,18 @@ onMounted(() => {
   letter-spacing: .08em;
 }
 
+.hero-summary {
+  flex: 0 0 620px;
+  max-width: 620px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .hero-badges {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
   gap: 12px;
-  width: min(100%, 620px);
+  width: 100%;
 }
 
 .hero-badge {
@@ -550,7 +564,14 @@ onMounted(() => {
 @media (max-width: 992px) {
   .hero-card :deep(.ant-card-body) {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+  }
+
+  .hero-summary {
+    flex-basis: auto;
+    max-width: none;
+    width: 100%;
+    justify-content: stretch;
   }
 
   .hero-badges {

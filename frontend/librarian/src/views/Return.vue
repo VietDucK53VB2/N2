@@ -6,7 +6,9 @@
         <h2>Xác nhận trả và kiểm tra tình trạng</h2>
         <p>Danh sách bên dưới chỉ hiển thị các phiếu đang chờ trả để xử lý nhanh hơn.</p>
       </div>
-      <a-tag color="purple">{{ filteredLoans.length }} phiếu đang chờ trả</a-tag>
+      <div class="hero-summary">
+        <a-tag color="purple" class="hero-pill">{{ filteredLoans.length }} phiếu đang chờ trả</a-tag>
+      </div>
     </a-card>
 
     <a-card class="panel-card">
@@ -280,10 +282,15 @@ onMounted(() => {
 
 .hero-card :deep(.ant-card-body) {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 20px 22px;
+  gap: 24px;
+  padding: 22px 24px;
+}
+
+.hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hero-copy h2 {
@@ -304,6 +311,20 @@ onMounted(() => {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .08em;
+}
+
+.hero-summary {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.hero-pill {
+  margin: 0;
+  padding: 6px 10px;
+  font-weight: 700;
+  border-radius: 999px;
 }
 
 .return-toolbar {
@@ -354,6 +375,11 @@ onMounted(() => {
   .return-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .hero-summary {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .return-search {
