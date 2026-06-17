@@ -1,5 +1,5 @@
 <template>
-  <v-layout>
+  <v-layout v-if="showChrome">
     <v-navigation-drawer v-model="drawer" permanent width="240" elevation="0" class="lib-sidebar">
       <div class="brand-area">
         <span class="brand-icon">📚</span>
@@ -79,6 +79,10 @@
       </v-container>
     </v-main>
   </v-layout>
+
+  <div v-else class="lib-embedded">
+    <router-view />
+  </div>
 </template>
 
 <script setup>
@@ -105,6 +109,8 @@ const userRoleLabel = computed(() => {
   if (role === 'reader') return 'Reader'
   return 'Librarian'
 })
+const isAdmin = computed(() => String(userInfo.value?.role || userInfo.value?.Role || '').toLowerCase() === 'admin')
+const showChrome = computed(() => !isAdmin.value && window.location.pathname.startsWith('/ui/librarian/'))
 
 const navItems = computed(() => [
   { title: 'Dashboard', icon: 'mdi-view-dashboard', route: 'lib-overview' },
@@ -254,5 +260,10 @@ function handleLogout() {
   font-size: 11px;
   font-weight: 600;
   color: #64748b;
+}
+
+.lib-embedded {
+  min-height: 100vh;
+  background: #f8f7fc;
 }
 </style>

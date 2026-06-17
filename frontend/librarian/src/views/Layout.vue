@@ -1,5 +1,5 @@
 <template>
-  <a-layout class="lib-shell">
+  <a-layout v-if="showChrome" class="lib-shell">
     <a-layout-sider
       v-model:collapsed="collapsed"
       :trigger="null"
@@ -156,6 +156,8 @@
       </a-descriptions>
     </a-modal>
   </a-layout>
+
+  <router-view v-else />
 </template>
 
 <script setup>
@@ -399,6 +401,7 @@ const pendingNotices = computed(() => {
     }
   })
 })
+const showChrome = computed(() => window.location.pathname.startsWith('/ui/librarian/'))
 
 async function onToolbarMenuClick({ key }) {
   if (key === 'refresh') {
