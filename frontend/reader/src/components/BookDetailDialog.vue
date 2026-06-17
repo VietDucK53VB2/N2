@@ -167,7 +167,6 @@ const store = useAppStore()
 const borrowing = ref(false)
 const errorMessage = ref('')
 const quantity = ref(1)
-const borrowDuration = ref(14)
 const borrowReturnAt = ref('')
 const reviews = ref([])
 const reviewsLoading = ref(false)
@@ -188,13 +187,18 @@ const heroBg = computed(() => {
 })
 const maxQuantity = computed(() => Math.max(1, Math.min(Number(props.book?.soBanConLai || 1), 10)))
 const unitPrice = computed(() => getBorrowUnitPrice(props.book))
-const totalPrice = computed(() => {
-  const days = Math.max(1, Number(borrowDuration.value || 1))
-  return unitPrice.value * quantity.value * days
-})
 const borrowStart = computed(() => new Date())
+const borrowDuration = computed(() => {
+  if (!borrowReturnAt.value) return 14
+  const start = dayjs(borrowStart.value)
+  const end = dayjs(borrowReturnAt.value)
+  if (!start.isValid() || !end.isValid()) return 14
+  const diffDays = end.diff(start, 'minute') / (60 * 24)
+  return Math.max(1, Math.ceil(diffDays))
+})
+const totalPrice = computed(() => unitPrice.value * quantity.value * borrowDuration.value)
 const durationSummary = computed(() => {
-  const duration = Math.max(1, Number(borrowDuration.value || 1))
+  const duration = borrowDuration.value
   return `${formatMoney(unitPrice.value)} x ${duration} ngày x ${quantity.value} cuốn`
 })
 
@@ -244,12 +248,20 @@ async function loadReviews(bookId) {
 
 watch(() => props.book?.id, () => {
   quantity.value = 1
-  borrowDuration.value = 14
   const now = new Date()
   borrowReturnAt.value = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
   errorMessage.value = ''
   loadReviews(props.book?.id)
 }, { immediate: true })
+
+watch(borrowReturnAt, () => {
+  if (!borrowReturnAt.value) return
+  const parsed = dayjs(borrowReturnAt.value)
+  if (!parsed.isValid()) return
+  if (parsed.isBefore(dayjs(borrowStart.value), 'minute')) {
+    borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'day').format('YYYY-MM-DDTHH:mm')
+  }
+})
 
 async function handleToggleFavorite() {
   await store.toggleFavorite(props.book)
@@ -283,7 +295,8 @@ async function handleBorrow() {
       quantity: quantity.value,
       totalPrice: totalPrice.value,
       borrowAt: borrowStart.value.toISOString(),
-      borrowDuration: Math.max(1, Number(borrowDuration.value || 1))
+      borrowDuration: borrowDuration.value,
+      returnAt: dayjs(borrowReturnAt.value).toISOString()
     })
     emit('update:modelValue', false)
   } catch {

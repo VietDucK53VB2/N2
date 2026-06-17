@@ -118,29 +118,27 @@ export const useAppStore = defineStore('app', () => {
       ? list.filter(item => String(item.id) !== id)
       : [normalizeFavoriteBook(book), ...list]
 
-    const previousList = favorites.value
     favorites.value = nextList
     persistFavorites(nextList)
 
     if (idx >= 0) {
-      const ok = await removeFavoriteBook(id)
-      if (!ok) {
-        favorites.value = previousList
-        persistFavorites(previousList)
-        return false
-      }
+      removeFavoriteBook(id).catch(() => false)
       return true
     }
 
     const normalizedBook = normalizeFavoriteBook(book)
-    const saved = await saveFavoriteBook(normalizedBook)
-    if (!saved) {
-      favorites.value = previousList
-      persistFavorites(previousList)
-      return false
-    }
-    favorites.value = [normalizeFavoriteBook(saved), ...list]
-    persistFavorites(favorites.value)
+    saveFavoriteBook(normalizedBook)
+      .then(saved => {
+        if (!saved) return
+        const current = Array.isArray(favorites.value) ? [...favorites.value] : []
+        const currentIdx = current.findIndex(item => String(item.id) === id)
+        if (currentIdx >= 0) {
+          current[currentIdx] = normalizeFavoriteBook(saved)
+          favorites.value = current
+          persistFavorites(current)
+        }
+      })
+      .catch(() => {})
     return true
   }
 
@@ -150,12 +148,7 @@ export const useAppStore = defineStore('app', () => {
     const list = previousList.filter(item => String(item.id) !== id)
     favorites.value = list
     persistFavorites(list)
-    const ok = await removeFavoriteBook(id)
-    if (!ok) {
-      favorites.value = previousList
-      persistFavorites(previousList)
-      return false
-    }
+    removeFavoriteBook(id).catch(() => false)
     return true
   }
 
