@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   fetchBooks, fetchTransactions, fetchAllTransactions,
-  fetchEvents, fetchFines, fetchFavorites, saveFavoriteBook, removeFavoriteBook,
+  fetchEvents, fetchFines, fetchPriceSettings, fetchFavorites, saveFavoriteBook, removeFavoriteBook,
   getReaderCard, getCachedUserInfo,
   loadUserProfile as loadProfile, normalizeEvent
 } from '@/utils/api'
@@ -33,6 +33,7 @@ export const useAppStore = defineStore('app', () => {
   const allTransactions = ref([])
   const events = ref([])
   const fines = ref([])
+  const priceSettings = ref(null)
   const userInfo = ref(getCachedUserInfo())
   const favorites = ref(loadFavoritesForUser(userInfo.value))
   const loading = ref(false)
@@ -464,6 +465,11 @@ export const useAppStore = defineStore('app', () => {
     return fines.value
   }
 
+  async function loadPriceSettings() {
+    priceSettings.value = await fetchPriceSettings()
+    return priceSettings.value
+  }
+
   async function loadUserInfo() {
     const info = await loadProfile()
     const cached = getCachedUserInfo()
@@ -527,6 +533,7 @@ export const useAppStore = defineStore('app', () => {
     try {
       await loadBooks()
       await loadMyTransactions()
+      await loadPriceSettings()
       if (isStaffRole()) {
         await Promise.all([
           loadAllTransactions(),
@@ -544,13 +551,13 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    books, myTransactions, allTransactions, events, fines, userInfo, loading,
+    books, myTransactions, allTransactions, events, fines, priceSettings, userInfo, loading,
     cartItems,
     favorites,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
     myFines, myUnpaidFines, myPendingFinePayments, myPaidFines, totalUnpaidFines,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isRenewPending, isActiveLoan, isFinePaid, isFinePaymentPending, cardNumberOf, bookIdOf,
-    loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
+    loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines, loadPriceSettings,
     addToCart, removeFromCart, clearCart,
     isFavorite, toggleFavorite, removeFavorite,
     loadFavoritesFromServer,

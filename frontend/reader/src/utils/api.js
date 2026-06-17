@@ -314,6 +314,17 @@ export async function fetchFines() {
   } catch { return [] }
 }
 
+export async function fetchPriceSettings() {
+  if (!isAuthSessionReady()) return null
+  try {
+    const r = await authFetchWithFallback('/settings/prices', { redirectOnAuthError: false })
+    if (!r.ok) return null
+    return await r.json()
+  } catch {
+    return null
+  }
+}
+
 export async function fetchFavorites() {
   if (!isAuthSessionReady()) return null
   try {

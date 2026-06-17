@@ -138,7 +138,18 @@ const items = computed(() => store.cartItems)
 const userName = computed(() => getDisplayName(store.userInfo || {}, 'b?n'))
 const totalQuantity = computed(() => items.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
 const totalPrice = computed(() => items.value.reduce((sum, item) => sum + lineTotal(item), 0))
-const remainingInMonth = computed(() => Math.max(0, 10 - totalQuantity.value))
+const monthlyBorrowLimit = computed(() => {
+  const settings = store.priceSettings || {}
+  const value = Number(settings.monthlyBorrowLimit ?? settings.MonthlyBorrowLimit ?? 5)
+  return Number.isFinite(value) && value > 0 ? value : 5
+})
+const activeBorrowCount = computed(() => store.activeTransactions.length)
+const remainingBorrowAllowance = computed(() =>
+  Math.max(0, monthlyBorrowLimit.value - activeBorrowCount.value)
+)
+const remainingInMonth = computed(() =>
+  Math.max(0, remainingBorrowAllowance.value - totalQuantity.value)
+)
 
 function ensureItem(item) {
   if (!item) return
@@ -205,6 +216,10 @@ function clearAll() {
 
 async function submitCart() {
   if (!items.value.length) return
+  if (totalQuantity.value > remainingBorrowAllowance.value) {
+    submitError.value = `Bạn chỉ còn ${remainingBorrowAllowance.value} lượt mượn trong tháng.`
+    return
+  }
   submitting.value = true
   submitError.value = ''
   try {
