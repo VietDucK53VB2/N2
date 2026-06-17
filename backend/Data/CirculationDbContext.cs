@@ -46,7 +46,8 @@ public sealed class CirculationDbContext : DbContext
             entity.Property(item => item.CardNumber).HasMaxLength(32);
             entity.Property(item => item.Amount).HasPrecision(18, 2);
             entity.Property(item => item.Reason).HasMaxLength(256).IsRequired();
-            entity.HasIndex(item => new { item.UserId, item.PaidAt });
+            entity.Property(item => item.PaymentStatus).HasMaxLength(32);
+            entity.HasIndex(item => new { item.UserId, item.PaymentStatus, item.PaidAt });
         });
 
         modelBuilder.Entity<PublishedEventLog>(entity =>

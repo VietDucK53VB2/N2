@@ -37,6 +37,14 @@ public static class CirculationSeeder
             try { await dbContext.Database.ExecuteSqlRawAsync(@"IF COL_LENGTH('dbo.BorrowTransactions', 'ReaderUsername') IS NULL
                 ALTER TABLE [dbo].[BorrowTransactions] ADD [ReaderUsername] nvarchar(64) NULL"); }
             catch { /* ignore */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"IF COL_LENGTH('dbo.FineCharges', 'PaymentStatus') IS NULL
+                ALTER TABLE [dbo].[FineCharges] ADD [PaymentStatus] nvarchar(32) NOT NULL CONSTRAINT [DF_FineCharges_PaymentStatus] DEFAULT('Unpaid')"); }
+            catch { /* ignore */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"IF COL_LENGTH('dbo.FineCharges', 'PaymentRequestedAt') IS NULL
+                ALTER TABLE [dbo].[FineCharges] ADD [PaymentRequestedAt] datetime2 NULL"); }
+            catch { /* ignore */ }
         }
         else if (dbContext.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
         {
@@ -64,6 +72,12 @@ public static class CirculationSeeder
             catch { /* ignore when the column already exists */ }
 
             try { await dbContext.Database.ExecuteSqlRawAsync(@"ALTER TABLE BorrowTransactions ADD COLUMN ReaderUsername TEXT NULL"); }
+            catch { /* ignore when the column already exists */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"ALTER TABLE FineCharges ADD COLUMN PaymentStatus TEXT NOT NULL DEFAULT 'Unpaid'"); }
+            catch { /* ignore when the column already exists */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"ALTER TABLE FineCharges ADD COLUMN PaymentRequestedAt TEXT NULL"); }
             catch { /* ignore when the column already exists */ }
         }
     }

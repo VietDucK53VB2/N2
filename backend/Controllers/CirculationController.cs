@@ -475,6 +475,7 @@ public sealed class CirculationController : ControllerBase
                 Amount = fineAmount,
                 Reason = $"Overdue return by {overdueDays} day(s)",
                 CreatedAt = returnedAt,
+                PaymentStatus = "Unpaid",
                 PaidAt = null
             });
         }
@@ -1088,16 +1089,74 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("fines")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<IReadOnlyList<object>>> GetFinesAsync(CancellationToken cancellationToken)
     {
-        var fines = await _dbContext.FineCharges
-            .AsNoTracking()
+        var finesQuery = _dbContext.FineCharges.AsNoTracking();
+
+        if (!IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
+                ?? GetClaimValue("sub")
+                ?? GetClaimValue("id")
+                ?? GetClaimValue("userId");
+
+            finesQuery = finesQuery.Where(f =>
+                (!string.IsNullOrWhiteSpace(tokenCardNumber) && f.CardNumber == tokenCardNumber) ||
+                (!string.IsNullOrWhiteSpace(tokenUserId) && f.UserId == tokenUserId));
+        }
+
+        var fines = await finesQuery
             .OrderByDescending(f => f.CreatedAt)
-            .Select(f => new { f.Id, f.BorrowTransactionId, f.UserId, f.CardNumber, f.Amount, f.Reason, f.CreatedAt, f.PaidAt })
+            .Select(f => new
+            {
+                f.Id,
+                f.BorrowTransactionId,
+                f.UserId,
+                f.CardNumber,
+                f.Amount,
+                f.Reason,
+                f.CreatedAt,
+                f.PaymentStatus,
+                f.PaymentRequestedAt,
+                f.PaidAt,
+                IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
+                IsPaymentPending = f.PaymentStatus == "PendingApproval"
+            })
             .ToListAsync(cancellationToken);
 
         return Ok(fines);
+    }
+
+    [HttpPost("fines/{id}/request-payment")]
+    [Authorize]
+    public async Task<ActionResult> RequestFinePaymentAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var fine = await _dbContext.FineCharges.FindAsync(new object[] { id }, cancellationToken);
+        if (fine is null)
+            return NotFound(new { Message = "Fine not found." });
+
+        if (!await CanAccessCardNumberAsync(fine.CardNumber, cancellationToken))
+            return Forbid();
+
+        if (fine.PaidAt != null || string.Equals(fine.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Fine has already been paid." });
+        }
+
+        if (string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(new { Message = "Fine payment is already waiting for librarian approval.", FineId = id, PaymentStatus = fine.PaymentStatus });
+        }
+
+        fine.PaymentStatus = "PendingApproval";
+        fine.PaymentRequestedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Fine payment request submitted.", FineId = id, PaymentStatus = fine.PaymentStatus });
     }
 
     [HttpPost("fines/{id}/pay")]
@@ -1108,10 +1167,16 @@ public sealed class CirculationController : ControllerBase
         if (fine is null)
             return NotFound(new { Message = "Fine not found." });
 
+        if (!string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Only pending fine payments can be approved." });
+        }
+
+        fine.PaymentStatus = "Paid";
         fine.PaidAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { Message = "Fine marked as paid.", FineId = id });
+        return Ok(new { Message = "Fine payment approved.", FineId = id });
     }
 
     [HttpPost("books/{bookId}/reviews")]

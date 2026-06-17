@@ -354,6 +354,14 @@ export async function returnTransaction(transactionId) {
 }
 
 export async function payFine(fineId) {
+  return requestFinePayment(fineId)
+}
+
+export async function requestFinePayment(fineId) {
+  return authFetchWithFallback(`/fines/${fineId}/request-payment`, { method: 'POST' })
+}
+
+export async function approveFinePayment(fineId) {
   return authFetchWithFallback(`/fines/${fineId}/pay`, { method: 'POST' })
 }
 

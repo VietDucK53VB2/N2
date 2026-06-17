@@ -195,7 +195,23 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function isFinePaid(fine = {}) {
-    return Boolean(fine.IsPaid || fine.isPaid || fine.PaidAt || fine.paidAt)
+    return Boolean(
+      fine.IsPaid ||
+      fine.isPaid ||
+      fine.PaymentStatus === 'Paid' ||
+      fine.paymentStatus === 'Paid' ||
+      fine.PaidAt ||
+      fine.paidAt
+    )
+  }
+
+  function isFinePaymentPending(fine = {}) {
+    return Boolean(
+      fine.IsPaymentPending ||
+      fine.isPaymentPending ||
+      fine.PaymentStatus === 'PendingApproval' ||
+      fine.paymentStatus === 'PendingApproval'
+    )
   }
 
   function cardNumberOf(record = {}) {
@@ -228,11 +244,17 @@ export const useAppStore = defineStore('app', () => {
   })
 
   const myUnpaidFines = computed(() =>
-    myFines.value.filter(f => !isFinePaid(f))
+    myFines.value.filter(f => !isFinePaid(f) && !isFinePaymentPending(f))
+  )
+
+  const myPendingFinePayments = computed(() =>
+    myFines.value.filter(isFinePaymentPending)
   )
 
   const totalUnpaidFines = computed(() =>
-    myUnpaidFines.value.reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0)
+    myFines.value
+      .filter(f => !isFinePaid(f))
+      .reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0)
   )
 
   async function loadBooks() {
@@ -431,8 +453,8 @@ export const useAppStore = defineStore('app', () => {
     cartItems,
     favorites,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
-    myFines, myUnpaidFines, totalUnpaidFines,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, cardNumberOf, bookIdOf,
+    myFines, myUnpaidFines, myPendingFinePayments, totalUnpaidFines,
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, isFinePaymentPending, cardNumberOf, bookIdOf,
     loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     addToCart, removeFromCart, clearCart,
     isFavorite, toggleFavorite, removeFavorite,

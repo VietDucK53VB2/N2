@@ -89,15 +89,33 @@
               <p class="text-h4 font-weight-black text-error">{{ formatMoney(store.totalUnpaidFines) }}</p>
             </div>
 
-            <v-list v-if="store.myUnpaidFines.length" density="compact" class="mb-4">
-              <v-list-item v-for="(fine, i) in store.myUnpaidFines" :key="i">
-                <v-list-item-title class="text-body-2">{{ fine.Reason || fine.reason || 'Phạt quá hạn' }}</v-list-item-title>
-                <v-list-item-subtitle>{{ formatDate(fine.CreatedAt || fine.createdAt) }}</v-list-item-subtitle>
-                <template #append>
-                  <span class="text-error font-weight-bold">{{ formatMoney(fine.Amount || fine.amount || 0) }}</span>
-                </template>
-              </v-list-item>
-            </v-list>
+            <div v-if="store.myUnpaidFines.length" class="mb-4">
+              <p class="text-caption font-weight-bold text-grey mb-2">Chưa thanh toán</p>
+              <v-list density="compact">
+                <v-list-item v-for="(fine, i) in store.myUnpaidFines" :key="`unpaid-${i}`">
+                  <v-list-item-title class="text-body-2">{{ fine.Reason || fine.reason || 'Phạt quá hạn' }}</v-list-item-title>
+                  <v-list-item-subtitle>{{ formatDate(fine.CreatedAt || fine.createdAt) }}</v-list-item-subtitle>
+                  <template #append>
+                    <span class="text-error font-weight-bold">{{ formatMoney(fine.Amount || fine.amount || 0) }}</span>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </div>
+
+            <div v-if="store.myPendingFinePayments.length" class="mb-4">
+              <p class="text-caption font-weight-bold text-grey mb-2">Đang chờ thủ thư duyệt</p>
+              <v-list density="compact">
+                <v-list-item v-for="(fine, i) in store.myPendingFinePayments" :key="`pending-${i}`">
+                  <v-list-item-title class="text-body-2">{{ fine.Reason || fine.reason || 'Phạt quá hạn' }}</v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ formatDate(fine.PaymentRequestedAt || fine.paymentRequestedAt || fine.CreatedAt || fine.createdAt) }}
+                  </v-list-item-subtitle>
+                  <template #append>
+                    <v-chip size="small" color="warning" variant="flat">Chờ duyệt</v-chip>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </div>
 
             <v-btn
               block
@@ -144,7 +162,7 @@
 <script setup>
 import { ref, computed, reactive } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { payFine } from '@/utils/api'
+import { requestFinePayment } from '@/utils/api'
 import { getInitials, getDisplayCardNumber, formatDate, formatMoney } from '@/utils/helpers'
 
 const store = useAppStore()
@@ -236,15 +254,15 @@ async function payAllFines() {
     for (const fine of store.myUnpaidFines) {
       const id = fine.Id || fine.id
       if (!id) continue
-      const response = await payFine(id)
+      const response = await requestFinePayment(id)
       if (!response.ok) {
         const data = await response.json().catch(() => null)
-        showMessage(data?.message || data?.Message || 'Không thanh toán được phí phạt.', 'error')
+        showMessage(data?.message || data?.Message || 'Không gửi được yêu cầu thanh toán.', 'error')
         return
       }
     }
     await store.loadAll()
-    showMessage('Đã thanh toán phí phạt.')
+    showMessage('Đã gửi yêu cầu thanh toán. Chờ thủ thư duyệt.')
   } catch {
     showMessage('Không kết nối được máy chủ. Vui lòng thử lại.', 'error')
   } finally {
