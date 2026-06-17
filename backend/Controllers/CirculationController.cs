@@ -2139,6 +2139,7 @@ public sealed class CirculationController : ControllerBase
                     continue;
                 }
 
+                var title = ReadString(book, "tenSach", "TenSach", "title", "Title") ?? id;
                 var latestReviews = ReadArray(book, "latestReviews", "LatestReviews");
                 var reviews = latestReviews.Select(item => TryReadReview(item, id)).Where(item => item is not null).Select(item => item!).ToList();
                 var averageRating = ReadDecimal(book, "averageRating", "AverageRating");
@@ -2152,6 +2153,7 @@ public sealed class CirculationController : ControllerBase
                 groups.Add(new
                 {
                     bookId = id,
+                    title,
                     averageRating = averageRating > 0 ? averageRating : (reviews.Count > 0 ? Math.Round(reviews.Average(item => item.Rating), 1) : 0),
                     reviewCount = reviewCount > 0 ? reviewCount : reviews.Count,
                     reviews = reviews.Select(ToReviewResponse).ToList()
@@ -2173,6 +2175,7 @@ public sealed class CirculationController : ControllerBase
             .Select(group => new
             {
                 bookId = group.Key,
+                title = group.Select(item => item.Title).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? group.Key,
                 averageRating = group.Any() ? Math.Round(group.Average(item => item.Rating), 1) : 0,
                 reviewCount = group.Count(),
                 reviews = group.Select(ToReviewResponse).ToList()
@@ -2219,9 +2222,61 @@ public sealed class CirculationController : ControllerBase
 
     private static List<object> MergeGroupedReviews(IEnumerable<object> first, IEnumerable<object> second)
     {
-        var firstReviews = ReadReviewsFromJson(JsonSerializer.Serialize(first));
-        var secondReviews = ReadReviewsFromJson(JsonSerializer.Serialize(second));
-        return GroupReviews(MergeReviews(firstReviews, secondReviews));
+        var groups = new Dictionary<string, (string Title, List<ReviewDto> Reviews)>(StringComparer.OrdinalIgnoreCase);
+
+        void AddGroups(IEnumerable<object> source)
+        {
+            var json = JsonSerializer.Serialize(source);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                var bookId = ReadString(item, "bookId", "BookId", "id", "Id");
+                if (string.IsNullOrWhiteSpace(bookId))
+                {
+                    continue;
+                }
+
+                var title = ReadString(item, "title", "Title") ?? bookId;
+                var nested = ReadArray(item, "reviews", "Reviews");
+                var reviews = nested.Count > 0
+                    ? nested.Select(review => TryReadReview(review, bookId)).Where(review => review is not null).Select(review => review!).ToList()
+                    : ReadReviewsFromJson(JsonSerializer.Serialize(item), bookId);
+
+                if (!groups.TryGetValue(bookId, out var existing))
+                {
+                    groups[bookId] = (title, reviews);
+                    continue;
+                }
+
+                existing.Title = string.IsNullOrWhiteSpace(existing.Title) ? title : existing.Title;
+                existing.Reviews.AddRange(reviews);
+                groups[bookId] = existing;
+            }
+        }
+
+        AddGroups(first);
+        AddGroups(second);
+
+        return groups
+            .Select(group => new
+            {
+                bookId = group.Key,
+                title = group.Value.Title,
+                averageRating = group.Value.Reviews.Count > 0 ? Math.Round(group.Value.Reviews.Average(item => item.Rating), 1) : 0,
+                reviewCount = group.Value.Reviews.Count,
+                reviews = group.Value.Reviews.Select(ToReviewResponse).ToList()
+            })
+            .ToList<object>();
     }
 
     private static object ToReviewResponse(ReviewDto item)
@@ -2679,6 +2734,7 @@ public sealed class CirculationController : ControllerBase
             Id = ReadString(root, "id", "Id", "reviewId", "ReviewId") ?? string.Empty,
             ReviewId = reviewId,
             BookId = bookId,
+            Title = ReadString(root, "title", "Title"),
             TransactionId = transactionId,
             UserId = ReadString(root, "userId", "UserId"),
             CardNumber = ReadString(root, "cardNumber", "CardNumber"),
@@ -2766,6 +2822,7 @@ public sealed class CirculationController : ControllerBase
         public string Id { get; init; } = string.Empty;
         public Guid ReviewId { get; init; }
         public string BookId { get; init; } = string.Empty;
+        public string? Title { get; init; }
         public Guid? TransactionId { get; init; }
         public string? UserId { get; init; }
         public string? CardNumber { get; init; }

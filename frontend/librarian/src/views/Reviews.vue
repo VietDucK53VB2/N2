@@ -37,6 +37,9 @@
         size="middle"
       >
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'title'">
+            <span class="font-weight-bold">{{ record.title || record.bookId || '—' }}</span>
+          </template>
           <template v-if="column.key === 'rating'">
             <a-rate :value="record.averageRating" disabled allow-half />
             <span class="ml-2">{{ record.averageRating.toFixed(1) }}/5</span>
@@ -96,7 +99,7 @@ async function load() {
     groups.value = Array.isArray(data)
       ? data.map(item => ({
           bookId: item.bookId || item.BookId || '',
-          title: item.title || item.Title || '',
+          title: item.title || item.Title || item.tenSach || item.TenSach || item.bookName || item.BookName || '',
           averageRating: Number(item.averageRating || item.AverageRating || 0),
           reviews: Array.isArray(item.reviews || item.Reviews) ? (item.reviews || item.Reviews) : []
         }))
