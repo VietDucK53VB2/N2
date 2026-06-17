@@ -130,6 +130,31 @@
             allow-clear
           />
         </a-form-item>
+        </a-form>
+      </a-modal>
+
+    <a-modal
+      v-model:open="rejectDialog"
+      :title="rejectDialogTitle"
+      ok-text="Từ chối"
+      cancel-text="Hủy"
+      :confirm-loading="rejecting"
+      @ok="confirmReject"
+    >
+      <div v-if="selectedReject" class="condition-summary">
+        <div class="font-medium">{{ rejectSummaryTitle }}</div>
+        <div class="muted">{{ rejectSummaryDetail }}</div>
+      </div>
+
+      <a-form layout="vertical">
+        <a-form-item label="Lý do từ chối" required>
+          <a-textarea
+            v-model:value="rejectForm.reason"
+            :rows="4"
+            :placeholder="rejectPlaceholder"
+            allow-clear
+          />
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
@@ -148,9 +173,15 @@ const actionId = ref(null)
 const conditionDialog = ref(false)
 const confirming = ref(false)
 const selectedReturn = ref(null)
+const rejectDialog = ref(false)
+const rejecting = ref(false)
+const selectedReject = ref(null)
 const conditionForm = reactive({
   condition: 'Good',
   conditionNote: ''
+})
+const rejectForm = reactive({
+  reason: ''
 })
 
 const columns = [
@@ -181,20 +212,14 @@ async function doApprove(r) {
 }
 
 async function doReject(r) {
-  actionId.value = r.Id + 'r'
-  const reason = store.promptRejectReason('Không đủ điều kiện mượn sách')
-  const res = await store.reject(r.Id, reason)
-  if (res.ok) message.success('Đã từ chối yêu cầu mượn.')
-  else message.error(await readError(res))
-  actionId.value = null
+  openRejectDialog(r, 'borrow')
 }
 
 async function doRenew(r) {
   actionId.value = r.Id + 're'
-  const reason = store.promptRejectReason('Gia hạn theo đề nghị độc giả')
   const res = await store.renew(r.Id, {
     extraDays: 7,
-    reason: reason || 'Gia hạn theo đề nghị độc giả'
+    reason: 'Gia hạn theo đề nghị độc giả'
   })
   if (res.ok) message.success('Đã duyệt gia hạn.')
   else message.error(await readError(res))
@@ -202,12 +227,7 @@ async function doRenew(r) {
 }
 
 async function doRejectRenew(r) {
-  actionId.value = r.Id + 'rrn'
-  const reason = store.promptRejectReason('Không đủ điều kiện gia hạn')
-  const res = await store.rejectRenew(r.Id, reason)
-  if (res.ok) message.success('Đã từ chối gia hạn.')
-  else message.error(await readError(res))
-  actionId.value = null
+  openRejectDialog(r, 'renew')
 }
 
 function openConditionDialog(record) {
@@ -237,12 +257,82 @@ async function doApproveReturn() {
 }
 
 async function doRejectReturn(r) {
-  actionId.value = r.Id + 'rr'
-  const reason = store.promptRejectReason('Không đủ điều kiện trả sách')
-  const res = await store.rejectReturn(r.Id, reason)
-  if (res.ok) message.success('Đã chuyển lại trạng thái đang mượn.')
-  else message.error(await readError(res))
-  actionId.value = null
+  openRejectDialog(r, 'return')
+}
+
+function openRejectDialog(record, kind) {
+  selectedReject.value = { record, kind }
+  rejectForm.reason = defaultRejectReason(kind)
+  rejectDialog.value = true
+}
+
+const rejectDialogTitle = computed(() => {
+  if (!selectedReject.value) return 'Từ chối'
+  if (selectedReject.value.kind === 'renew') return 'Từ chối gia hạn'
+  if (selectedReject.value.kind === 'return') return 'Từ chối trả sách'
+  return 'Từ chối yêu cầu mượn'
+})
+
+const rejectPlaceholder = computed(() => {
+  if (!selectedReject.value) return 'Nhập lý do từ chối'
+  if (selectedReject.value.kind === 'renew') return 'Nhập lý do từ chối gia hạn'
+  if (selectedReject.value.kind === 'return') return 'Nhập lý do từ chối trả sách'
+  return 'Nhập lý do từ chối yêu cầu mượn'
+})
+
+const rejectSummaryTitle = computed(() => {
+  if (!selectedReject.value) return '—'
+  const record = selectedReject.value.record || {}
+  return `${readerNameOf(record)} · ${bookTitleOf(record)}`
+})
+
+const rejectSummaryDetail = computed(() => {
+  if (!selectedReject.value) return '—'
+  const record = selectedReject.value.record || {}
+  return `${store.cardNumberOf(record)} · Book ID: ${store.bookIdOf(record)}`
+})
+
+function defaultRejectReason(kind) {
+  if (kind === 'renew') return 'Không đủ điều kiện gia hạn'
+  if (kind === 'return') return 'Không đủ điều kiện trả sách'
+  return 'Không đủ điều kiện mượn sách'
+}
+
+async function confirmReject() {
+  if (!selectedReject.value) return
+  const record = selectedReject.value.record || {}
+  const id = record.Id || record.id
+  if (!id) return
+
+  rejecting.value = true
+  try {
+    const kind = selectedReject.value.kind
+    const reason = rejectForm.reason.trim() || defaultRejectReason(kind)
+    let res
+    if (kind === 'renew') {
+      res = await store.rejectRenew(id, reason)
+    } else if (kind === 'return') {
+      res = await store.rejectReturn(id, reason)
+    } else {
+      res = await store.reject(id, reason)
+    }
+
+    if (res.ok) {
+      message.success(
+        kind === 'renew'
+          ? 'Đã từ chối gia hạn.'
+          : kind === 'return'
+            ? 'Đã chuyển lại trạng thái đang mượn.'
+            : 'Đã từ chối yêu cầu mượn.'
+      )
+      rejectDialog.value = false
+      selectedReject.value = null
+    } else {
+      message.error(await readError(res))
+    }
+  } finally {
+    rejecting.value = false
+  }
 }
 
 async function readError(res) {

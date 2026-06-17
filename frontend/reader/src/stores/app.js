@@ -243,6 +243,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function isFinePaymentPending(fine = {}) {
+    if (isFinePaid(fine)) return false
     return Boolean(
       fine.IsPaymentPending ||
       fine.isPaymentPending ||
@@ -288,6 +289,10 @@ export const useAppStore = defineStore('app', () => {
 
   const myPendingFinePayments = computed(() =>
     myFines.value.filter(isFinePaymentPending)
+  )
+
+  const myPaidFines = computed(() =>
+    myFines.value.filter(isFinePaid)
   )
 
   const totalUnpaidFines = computed(() =>
@@ -488,7 +493,7 @@ export const useAppStore = defineStore('app', () => {
     cartItems,
     favorites,
     activeTransactions, overdueTransactions, pendingTransactions, returnedTransactions,
-    myFines, myUnpaidFines, myPendingFinePayments, totalUnpaidFines,
+    myFines, myUnpaidFines, myPendingFinePayments, myPaidFines, totalUnpaidFines,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, isFinePaid, isFinePaymentPending, cardNumberOf, bookIdOf,
     loadBooks, loadMyTransactions, loadAllTransactions, loadEvents, loadFines,
     addToCart, removeFromCart, clearCart,

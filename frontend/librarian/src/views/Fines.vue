@@ -121,11 +121,36 @@
         </template>
       </a-table>
     </a-card>
+
+    <a-modal
+      v-model:open="rejectDialog"
+      title="Từ chối duyệt phí phạt"
+      ok-text="Từ chối"
+      cancel-text="Hủy"
+      :confirm-loading="rejecting"
+      @ok="confirmReject"
+    >
+      <div v-if="selectedFine" class="reject-summary">
+        <div class="font-medium">{{ displayReader(selectedFine) }}</div>
+        <div class="muted">{{ displayCard(selectedFine) }} · {{ displayBook(selectedFine) }}</div>
+      </div>
+
+      <a-form layout="vertical">
+        <a-form-item label="Lý do từ chối" required>
+          <a-textarea
+            v-model:value="rejectForm.reason"
+            :rows="4"
+            placeholder="Nhập lý do từ chối duyệt phí phạt"
+            allow-clear
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import dayjs from 'dayjs'
 import { message } from 'ant-design-vue'
 import { useLibrarianStore } from '@/stores/librarian'
@@ -133,6 +158,12 @@ import { useLibrarianStore } from '@/stores/librarian'
 const libStore = useLibrarianStore()
 const filter = ref('all')
 const actionId = ref(null)
+const rejectDialog = ref(false)
+const rejecting = ref(false)
+const selectedFine = ref(null)
+const rejectForm = reactive({
+  reason: ''
+})
 
 const columns = [
   { title: 'Độc giả', key: 'reader', width: 240, sortable: false },
@@ -185,6 +216,7 @@ function isPaid(item) {
 }
 
 function isPending(item) {
+  if (isPaid(item)) return false
   return Boolean(
     item.IsPaymentPending ||
     item.isPaymentPending ||
@@ -238,17 +270,30 @@ async function approve(item) {
 }
 
 async function reject(item) {
-  const id = item.Id || item.id
+  selectedFine.value = item
+  rejectForm.reason = 'Không đủ điều kiện duyệt thanh toán phí phạt'
+  rejectDialog.value = true
+}
+
+async function confirmReject() {
+  if (!selectedFine.value) return
+  const id = selectedFine.value.Id || selectedFine.value.id
   if (!id) return
-  const reason = libStore.promptRejectReason('Không đủ điều kiện duyệt thanh toán phí phạt')
-  if (!reason) return
-  actionId.value = actionKey(item, 'reject')
+  rejecting.value = true
+  actionId.value = actionKey(selectedFine.value, 'reject')
   try {
+    const reason = rejectForm.reason.trim() || 'Không đủ điều kiện duyệt thanh toán phí phạt'
     const res = await libStore.rejectFinePayment(id, reason)
-    if (res.ok) message.success('Đã từ chối duyệt phí phạt.')
-    else message.error(await readError(res))
+    if (res.ok) {
+      message.success('Đã từ chối duyệt phí phạt.')
+      rejectDialog.value = false
+      selectedFine.value = null
+    } else {
+      message.error(await readError(res))
+    }
   } finally {
     actionId.value = null
+    rejecting.value = false
   }
 }
 

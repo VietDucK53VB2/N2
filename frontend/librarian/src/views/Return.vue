@@ -105,6 +105,31 @@
             allow-clear
           />
         </a-form-item>
+        </a-form>
+      </a-modal>
+
+    <a-modal
+      v-model:open="rejectDialog"
+      title="Từ chối trả sách"
+      ok-text="Từ chối"
+      cancel-text="Hủy"
+      :confirm-loading="rejecting"
+      @ok="confirmReject"
+    >
+      <div v-if="selectedReject" class="condition-summary">
+        <div class="font-medium">{{ bookTitle(selectedReject) }}</div>
+        <div class="muted">{{ store.cardNumberOf(selectedReject) }} · Book ID: {{ store.bookIdOf(selectedReject) }}</div>
+      </div>
+
+      <a-form layout="vertical">
+        <a-form-item label="Lý do từ chối" required>
+          <a-textarea
+            v-model:value="rejectForm.reason"
+            :rows="4"
+            placeholder="Nhập lý do từ chối trả sách"
+            allow-clear
+          />
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
@@ -122,9 +147,15 @@ const actionId = ref(null)
 const conditionDialog = ref(false)
 const confirming = ref(false)
 const selectedLoan = ref(null)
+const rejectDialog = ref(false)
+const rejecting = ref(false)
+const selectedReject = ref(null)
 const conditionForm = reactive({
   condition: 'Good',
   conditionNote: ''
+})
+const rejectForm = reactive({
+  reason: ''
 })
 
 const columns = [
@@ -184,12 +215,29 @@ async function approveWithCondition() {
 }
 
 async function reject(record) {
-  actionId.value = record.Id + 'no'
-  const reason = window.prompt('Nhập lý do từ chối trả sách', 'Không đủ điều kiện trả sách') || ''
-  const res = await store.rejectReturn(record.Id, reason)
-  if (res.ok) message.success('Đã chuyển lại trạng thái đang mượn.')
-  else message.error(await readError(res))
-  actionId.value = null
+  selectedReject.value = record
+  rejectForm.reason = 'Không đủ điều kiện trả sách'
+  rejectDialog.value = true
+}
+
+async function confirmReject() {
+  if (!selectedReject.value) return
+  const id = selectedReject.value.Id || selectedReject.value.id
+  if (!id) return
+  rejecting.value = true
+  try {
+    const reason = rejectForm.reason.trim() || 'Không đủ điều kiện trả sách'
+    const res = await store.rejectReturn(id, reason)
+    if (res.ok) {
+      message.success('Đã chuyển lại trạng thái đang mượn.')
+      rejectDialog.value = false
+      selectedReject.value = null
+    } else {
+      message.error(await readError(res))
+    }
+  } finally {
+    rejecting.value = false
+  }
 }
 
 async function readError(res) {

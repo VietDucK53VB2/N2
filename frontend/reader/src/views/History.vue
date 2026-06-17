@@ -83,16 +83,61 @@
         </template>
       </v-data-table>
     </v-card>
+
+    <v-card rounded="xl" elevation="1" class="mt-5">
+      <v-card-title class="d-flex align-center justify-space-between">
+        <span class="font-weight-bold">Lịch sử phí phạt</span>
+        <v-chip size="small" variant="tonal">{{ store.myFines.length }} khoản</v-chip>
+      </v-card-title>
+      <v-card-text class="pt-0">
+        <v-btn-toggle
+          v-model="fineFilter"
+          mandatory
+          density="comfortable"
+          variant="outlined"
+          class="mb-4 flex-wrap"
+        >
+          <v-btn value="all">Tất cả</v-btn>
+          <v-btn value="unpaid">Chưa thanh toán</v-btn>
+          <v-btn value="pending">Chờ duyệt</v-btn>
+          <v-btn value="paid">Đã thanh toán</v-btn>
+        </v-btn-toggle>
+
+        <v-data-table
+          :headers="fineHeaders"
+          :items="filteredFines"
+          :items-per-page="10"
+          class="history-table"
+        >
+          <template #item.reason="{ item }">
+            <div>
+              <p class="text-body-2 font-weight-bold">{{ formatFineReason(item.Reason || item.reason || '') }}</p>
+              <p class="text-caption text-grey">Book ID: {{ item.BookId || item.bookId || '—' }}</p>
+            </div>
+          </template>
+          <template #item.amount="{ item }">{{ formatMoney(item.Amount || item.amount || 0) }}</template>
+          <template #item.CreatedAt="{ item }">{{ formatDate(item.CreatedAt || item.createdAt) }}</template>
+          <template #item.PaymentRequestedAt="{ item }">{{ item.PaymentRequestedAt || item.paymentRequestedAt ? formatDate(item.PaymentRequestedAt || item.paymentRequestedAt) : '—' }}</template>
+          <template #item.PaidAt="{ item }">{{ item.PaidAt || item.paidAt ? formatDate(item.PaidAt || item.paidAt) : '—' }}</template>
+          <template #item.status="{ item }">
+            <v-chip size="small" :color="fineStatusColor(item)" variant="flat">
+              {{ fineStatusLabel(item) }}
+            </v-chip>
+          </template>
+        </v-data-table>
+      </v-card-text>
+    </v-card>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { titleColor, formatDate } from '@/utils/helpers'
+import { titleColor, formatDate, formatMoney } from '@/utils/helpers'
 
 const store = useAppStore()
 const loading = ref(false)
+const fineFilter = ref('all')
 
 const headers = [
   { title: 'Tên sách', key: 'book', sortable: false, width: '280px' },
@@ -100,6 +145,15 @@ const headers = [
   { title: 'Hạn trả', key: 'DueAt', width: '120px' },
   { title: 'Ngày trả', key: 'ReturnedAt', width: '120px' },
   { title: 'Trạng thái', key: 'Status', width: '120px' }
+]
+
+const fineHeaders = [
+  { title: 'Lý do', key: 'reason', sortable: false, width: '280px' },
+  { title: 'Số tiền', key: 'amount', width: '120px' },
+  { title: 'Ngày tạo', key: 'CreatedAt', width: '130px' },
+  { title: 'Yêu cầu lúc', key: 'PaymentRequestedAt', width: '130px' },
+  { title: 'Đã thanh toán lúc', key: 'PaidAt', width: '130px' },
+  { title: 'Trạng thái', key: 'status', width: '130px' }
 ]
 
 const notifications = computed(() => {
@@ -130,6 +184,14 @@ const latestRejectLabel = computed(() => {
   return item ? 'Có' : 'Không'
 })
 
+const filteredFines = computed(() => {
+  const items = store.myFines || []
+  if (fineFilter.value === 'paid') return items.filter(isFinePaid)
+  if (fineFilter.value === 'pending') return items.filter(isFinePending)
+  if (fineFilter.value === 'unpaid') return items.filter(item => !isFinePaid(item) && !isFinePending(item))
+  return items
+})
+
 function getStatusColor(tx) {
   if (store.isOverdue(tx)) return 'error'
   if (store.isReturned(tx)) return 'success'
@@ -148,6 +210,50 @@ function getStatusLabel(tx) {
   if (status === 'ReturnPending') return 'Chờ trả'
   if (status === 'Pending') return 'Chờ duyệt'
   return 'Đang mượn'
+}
+
+function isFinePaid(item = {}) {
+  return Boolean(
+    item.IsPaid ||
+    item.isPaid ||
+    item.PaymentStatus === 'Paid' ||
+    item.paymentStatus === 'Paid' ||
+    item.PaidAt ||
+    item.paidAt
+  )
+}
+
+function isFinePending(item = {}) {
+  if (isFinePaid(item)) return false
+  return Boolean(
+    item.IsPaymentPending ||
+    item.isPaymentPending ||
+    item.PaymentRequestedAt ||
+    item.paymentRequestedAt ||
+    item.PaymentStatus === 'PendingApproval' ||
+    item.paymentStatus === 'PendingApproval'
+  )
+}
+
+function fineStatusLabel(item = {}) {
+  if (isFinePaid(item)) return 'Đã thanh toán'
+  if (isFinePending(item)) return 'Chờ duyệt'
+  return 'Chưa yêu cầu'
+}
+
+function fineStatusColor(item = {}) {
+  if (isFinePaid(item)) return 'success'
+  if (isFinePending(item)) return 'warning'
+  return 'grey'
+}
+
+function formatFineReason(reason = '') {
+  const text = String(reason || '').trim()
+  if (!text) return '—'
+  const overdueMatch = text.match(/Overdue return by (\d+) day\(s\)/i)
+  if (overdueMatch) return `Phạt trả quá hạn ${overdueMatch[1]} ngày`
+  if (/lost book fee/i.test(text)) return 'Phí mất sách'
+  return text
 }
 
 onMounted(async () => {

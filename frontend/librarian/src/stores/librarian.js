@@ -285,8 +285,27 @@ export async function initAuth() {
   return Boolean(getToken())
 }
 
-function promptRejectReason(defaultReason = '') {
-  return window.prompt('Nhập lý do từ chối', defaultReason) || ''
+function isFinePaid(fine = {}) {
+  return Boolean(
+    fine.IsPaid ||
+    fine.isPaid ||
+    fine.PaymentStatus === 'Paid' ||
+    fine.paymentStatus === 'Paid' ||
+    fine.PaidAt ||
+    fine.paidAt
+  )
+}
+
+function isFinePaymentPending(fine = {}) {
+  if (isFinePaid(fine)) return false
+  return Boolean(
+    fine.IsPaymentPending ||
+    fine.isPaymentPending ||
+    fine.PaymentRequestedAt ||
+    fine.paymentRequestedAt ||
+    fine.PaymentStatus === 'PendingApproval' ||
+    fine.paymentStatus === 'PendingApproval'
+  )
 }
 
 export const useLibrarianStore = defineStore('librarian', () => {
@@ -302,9 +321,9 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const returnPendingTx = computed(() => transactions.value.filter(isReturnPending))
   const returnedTx = computed(() => transactions.value.filter(isReturned))
 
-  const unpaidFines = computed(() => fines.value.filter(f => !(f.IsPaid || f.isPaid)))
+  const unpaidFines = computed(() => fines.value.filter(f => !isFinePaid(f)))
   const totalUnpaid = computed(() => unpaidFines.value.reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0))
-  const paidFines = computed(() => fines.value.filter(f => f.IsPaid || f.isPaid))
+  const paidFines = computed(() => fines.value.filter(isFinePaid))
   const totalRevenue = computed(() => Number(revenueSummary.value?.totalRevenue || 0))
   const totalBorrowRevenue = computed(() => Number(revenueSummary.value?.totalBorrowRevenue || 0))
   const totalFineRevenue = computed(() => Number(revenueSummary.value?.totalFineRevenue || 0))
@@ -382,6 +401,6 @@ export const useLibrarianStore = defineStore('librarian', () => {
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf,
-    loadTransactions, loadFines, loadRevenueSummary, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine, promptRejectReason
+    loadTransactions, loadFines, loadRevenueSummary, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
   }
 })

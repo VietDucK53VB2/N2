@@ -128,6 +128,16 @@
             >
               Thanh toán ngay
             </v-btn>
+            <v-btn
+              v-if="store.myPaidFines.length"
+              block
+              variant="text"
+              class="mt-2"
+              prepend-icon="mdi-history"
+              :to="{ name: 'history' }"
+            >
+              Xem lịch sử phí phạt
+            </v-btn>
             <p class="text-caption text-grey text-center mt-3">
               Thanh toán trước ngày 15 hàng tháng để tránh bị khóa thẻ.
             </p>
