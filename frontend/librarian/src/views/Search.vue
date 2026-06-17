@@ -6,15 +6,16 @@
         <h2>Nhập mã thẻ để xem lịch sử mượn</h2>
         <p>Tra nhanh số phiếu, tình trạng quá hạn và các lượt đã trả của từng độc giả.</p>
       </div>
-
-      <a-input-search
-        v-model:value="cardNumber"
-        placeholder="Nhập mã thẻ độc giả..."
-        enter-button="Tìm kiếm"
-        size="large"
-        class="search-box"
-        @search="search"
-      />
+      <div class="hero-actions">
+        <a-input-search
+          v-model:value="cardNumber"
+          placeholder="Nhập mã thẻ độc giả..."
+          enter-button="Tìm kiếm"
+          size="large"
+          class="search-box"
+          @search="search"
+        />
+      </div>
     </a-card>
 
     <a-row v-if="result" :gutter="[16, 16]" class="summary-row">
@@ -158,10 +159,15 @@ onMounted(() => {
 
 .hero-card :deep(.ant-card-body) {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 20px 22px;
+  gap: 24px;
+  padding: 22px 24px;
+}
+
+.hero-copy {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hero-copy h2 {
@@ -184,8 +190,14 @@ onMounted(() => {
   letter-spacing: .08em;
 }
 
+.hero-actions {
+  flex: 0 0 460px;
+  max-width: 460px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .search-box {
-  max-width: 420px;
   width: 100%;
 }
 
@@ -207,8 +219,15 @@ onMounted(() => {
     align-items: stretch;
   }
 
-  .search-box {
+  .hero-actions {
+    flex-basis: auto;
     max-width: none;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .search-box {
+    width: 100%;
   }
 }
 </style>
