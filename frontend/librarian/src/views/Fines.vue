@@ -208,7 +208,7 @@ function displayCard(item = {}) {
 }
 
 function displayBook(item = {}) {
-  return item.TenSach || item.tenSach || item.Title || item.title || item.BookId || item.bookId || '—'
+  return libStore.bookTitleOf(item)
 }
 
 function isPaid(item) {

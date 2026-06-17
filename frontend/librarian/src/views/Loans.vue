@@ -34,6 +34,7 @@
           <a-radio-button value="all">Tất cả</a-radio-button>
           <a-radio-button value="Pending">Chờ duyệt</a-radio-button>
           <a-radio-button value="Borrowed">Đang mượn</a-radio-button>
+          <a-radio-button value="RenewPending">Gia hạn</a-radio-button>
           <a-radio-button value="ReturnPending">Chờ trả</a-radio-button>
           <a-radio-button value="Overdue">Quá hạn</a-radio-button>
           <a-radio-button value="Returned">Đã trả</a-radio-button>
@@ -355,17 +356,7 @@ function readerNameOf(record = {}) {
 }
 
 function bookTitleOf(record = {}) {
-  return (
-    record.TenSach ||
-    record.tenSach ||
-    record.Title ||
-    record.title ||
-    record.BookTitle ||
-    record.bookTitle ||
-    record.BookName ||
-    record.bookName ||
-    `Book #${store.bookIdOf(record)}`
-  )
+  return store.bookTitleOf(record)
 }
 
 function formatDurationText(startValue, endValue) {

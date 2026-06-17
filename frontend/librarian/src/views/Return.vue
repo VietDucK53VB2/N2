@@ -248,7 +248,7 @@ async function readError(res) {
 }
 
 function bookTitle(loan = {}) {
-  return loan.TenSach || loan.tenSach || loan.Title || loan.title || '—'
+  return store.bookTitleOf(loan)
 }
 
 function readerName(loan = {}) {

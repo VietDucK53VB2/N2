@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
+const CATALOG_API = `${window.location.origin}/api/catalog/books`
 const N3_LOGIN_URL = `${window.location.origin}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 
@@ -223,6 +224,17 @@ function bookIdOf(transaction = {}) {
   return transaction.BookId || transaction.bookId || ''
 }
 
+function normalizeBook(book = {}) {
+  return {
+    id: String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? ''),
+    tenSach: book.tenSach ?? book.TenSach ?? book.title ?? book.Title ?? '',
+    tacGia: book.tacGia ?? book.TacGia ?? book.author ?? book.Author ?? '',
+    imageUrl: book.imageUrl ?? book.ImageUrl ?? '',
+    theLoai: book.theLoai ?? book.TheLoai ?? '',
+    trangThai: book.trangThai ?? book.TrangThai ?? ''
+  }
+}
+
 async function apiFetch(url, opts = {}) {
   const t = getToken()
   const response = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(opts.headers || {}) } })
@@ -313,10 +325,21 @@ function isFinePaymentPending(fine = {}) {
 }
 
 export const useLibrarianStore = defineStore('librarian', () => {
+  const books = ref([])
   const transactions = ref([])
   const fines = ref([])
   const revenueSummary = ref(null)
   const loading = ref(false)
+
+  const bookMap = computed(() => {
+    const map = new Map()
+    for (const book of books.value) {
+      const normalized = normalizeBook(book)
+      if (!normalized.id) continue
+      map.set(normalized.id, normalized)
+    }
+    return map
+  })
 
   const pendingTx = computed(() => transactions.value.filter(isPending))
   const borrowedTx = computed(() => transactions.value.filter(isBorrowed))
@@ -341,6 +364,21 @@ export const useLibrarianStore = defineStore('librarian', () => {
     loading.value = true
     try { const r = await apiFetch(`${CIRC_API}/transactions`); if (r.ok) transactions.value = await r.json() } catch {}
     finally { loading.value = false }
+  }
+  async function loadBooks() {
+    try {
+      const r = await apiFetch(CATALOG_API)
+      if (!r.ok) {
+        books.value = []
+        return []
+      }
+      const data = await r.json()
+      books.value = Array.isArray(data) ? data.map(normalizeBook) : []
+      return books.value
+    } catch {
+      books.value = []
+      return []
+    }
   }
   async function loadFines() {
     try { const r = await apiFetch(`${CIRC_API}/fines`); if (r.ok) fines.value = await r.json() } catch {}
@@ -398,13 +436,30 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
   async function payFine(id) { const r = await apiFetch(`${CIRC_API}/fines/${id}/pay`, { method: 'POST' }); if (r.ok) await loadFines(); return r }
-  async function loadAll() { await Promise.all([loadTransactions(), loadFines(), loadRevenueSummary()]) }
+  async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary()]) }
+
+  function bookTitleOf(record = {}) {
+    const bookId = String(bookIdOf(record))
+    const match = bookMap.value.get(bookId)
+    return (
+      record.TenSach ||
+      record.tenSach ||
+      record.Title ||
+      record.title ||
+      record.BookTitle ||
+      record.bookTitle ||
+      record.BookName ||
+      record.bookName ||
+      match?.tenSach ||
+      (bookId ? `Book #${bookId}` : '—')
+    )
+  }
 
   return {
-    transactions, fines, revenueSummary, loading,
+    books, transactions, fines, revenueSummary, loading,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf,
-    loadTransactions, loadFines, loadRevenueSummary, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,
+    loadBooks, loadTransactions, loadFines, loadRevenueSummary, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
   }
 })
