@@ -4,21 +4,22 @@
       v-model:collapsed="collapsed"
       :trigger="null"
       collapsible
-      width="240"
-      :collapsed-width="64"
-      theme="dark"
+      width="248"
+      :collapsed-width="80"
+      theme="light"
       class="lib-sider"
-      @mouseenter="collapsed = false"
-      @mouseleave="collapsed = true"
     >
       <div class="sider-brand">
-        <div class="brand-avatar">📚</div>
+        <div class="brand-avatar"><BookOutlined /></div>
         <transition name="fade-text">
-          <span v-if="!collapsed" class="brand-name">SmartLib</span>
+          <div v-if="!collapsed" class="brand-copy">
+            <span class="brand-name">SmartLib</span>
+            <span class="brand-subtitle">Library System</span>
+          </div>
         </transition>
       </div>
 
-      <a-menu v-model:selectedKeys="selectedKeys" theme="dark" mode="inline" @click="onMenuClick">
+      <a-menu v-model:selectedKeys="selectedKeys" theme="light" mode="inline" @click="onMenuClick">
         <a-menu-item key="overview">
           <template #icon><DashboardOutlined /></template>
           <span>Dashboard</span>
@@ -50,9 +51,10 @@
       </a-menu>
 
       <div class="sider-footer">
-        <a-button type="text" danger block @click="doLogout">
+        <div class="portal-pill">ADMIN PORTAL</div>
+        <a-button class="logout-btn" block @click="doLogout">
           <template #icon><LogoutOutlined /></template>
-          <span v-if="!collapsed">Đăng xuất</span>
+          <span v-if="!collapsed">Logout</span>
         </a-button>
       </div>
     </a-layout-sider>
@@ -66,14 +68,26 @@
           </a-button>
           <div class="header-info">
             <h3 class="header-title">Welcome {{ displayName }} !</h3>
+            <p v-if="pageSub" class="header-subtitle">{{ pageSub }}</p>
           </div>
         </div>
 
         <a-space class="header-right" :size="12">
-          <a-input-search placeholder="Tìm kiếm độc giả, thẻ..." style="width:260px" size="middle" class="header-search" />
+          <a-input-search
+            placeholder="Tìm kiếm Độc giả, Thẻ..."
+            style="width: 260px"
+            size="middle"
+            class="header-search"
+          />
+          <a-button type="text" shape="circle" size="large" class="topbar-action">
+            <SettingOutlined />
+          </a-button>
           <a-badge :count="store.pendingTx.length" :offset="[-4, 4]">
-            <a-button type="text" shape="circle" size="large" class="topbar-action"><BellOutlined /></a-button>
+            <a-button type="text" shape="circle" size="large" class="topbar-action">
+              <BellOutlined />
+            </a-button>
           </a-badge>
+          <a-button class="lang-pill">EN</a-button>
           <div class="header-profile">
             <a-avatar size="40" class="header-avatar" :src="avatarUrl || undefined">{{ initials }}</a-avatar>
             <div class="profile-meta">
@@ -105,13 +119,15 @@ import {
   BellOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  StarOutlined
+  StarOutlined,
+  SettingOutlined,
+  BookOutlined
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const store = useLibrarianStore()
-const collapsed = ref(true)
+const collapsed = ref(false)
 const selectedKeys = ref(['overview'])
 const sessionUserInfo = ref(readSessionUserInfo())
 
@@ -255,34 +271,34 @@ const displayName = computed(() => extractDisplayName(userInfo.value))
 const initials = computed(() => getInitialsFromName(displayName.value))
 const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
 
-const titles = {
-  overview: 'Dashboard',
-  loans: 'Xử lý Phiếu mượn',
-  search: 'Tra cứu Tình trạng',
-  return: 'Xác nhận Trả sách',
-  reviews: 'Đánh giá sách',
-  'finance-prices': 'Giá & phí',
-  'finance-revenue': 'Doanh thu',
-  fines: 'Quản lý Phí phạt'
+const pageSub = computed(() => {
+  const sub = {
+    overview: 'Tổng quan hoạt động thư viện',
+    loans: 'Duyệt và xử lý phiếu mượn',
+    search: 'Tra cứu theo mã thẻ độc giả',
+    return: 'Xử lý trả sách và gia hạn',
+    reviews: 'Theo dõi đánh giá sách',
+    'finance-prices': 'Giá và phí dịch vụ',
+    'finance-revenue': 'Tổng hợp doanh thu',
+    fines: 'Quản lý phí phạt'
+  }
+  return sub[route.name] || ''
+})
+
+watch(
+  () => route.name,
+  n => { selectedKeys.value = [n || 'overview'] },
+  { immediate: true }
+)
+
+function onMenuClick({ key }) {
+  router.push({ name: key })
 }
 
-const subs = {
-  overview: 'Tổng quan hoạt động thư viện',
-  loans: 'Duyệt hoặc từ chối yêu cầu mượn sách',
-  search: 'Tìm kiếm theo mã thẻ độc giả',
-  return: 'Wizard 3 bước xử lý trả sách',
-  reviews: 'Theo dõi và tổng hợp đánh giá sách',
-  'finance-prices': 'Thiết lập và theo dõi khung giá, phí dịch vụ',
-  'finance-revenue': 'Tổng hợp doanh thu từ hoạt động thư viện',
-  fines: 'Theo dõi và thu phí phạt'
+function doLogout() {
+  localStorage.clear()
+  window.location.href = window.location.origin.replace(/:\d+$/, '') + '/login'
 }
-
-const pageTitle = computed(() => titles[route.name] || 'Thủ thư')
-const pageSub = computed(() => subs[route.name] || '')
-
-watch(() => route.name, n => { selectedKeys.value = [n || 'overview'] }, { immediate: true })
-function onMenuClick({ key }) { router.push({ name: key }) }
-function doLogout() { localStorage.clear(); window.location.href = window.location.origin.replace(/:\d+$/, '') + '/login' }
 
 onMounted(() => {
   syncSessionUser()
@@ -293,9 +309,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('storage', syncSessionUser)
 })
 
-watch(() => route.fullPath, () => {
-  syncSessionUser()
-}, { immediate: true })
+watch(
+  () => route.fullPath,
+  () => {
+    syncSessionUser()
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -303,7 +323,7 @@ watch(() => route.fullPath, () => {
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
-  background: #f7f9f8;
+  background: linear-gradient(180deg, #f7faf7 0%, #f3f6f0 100%);
 }
 
 .lib-main {
@@ -313,13 +333,13 @@ watch(() => route.fullPath, () => {
 }
 
 .lib-sider {
-  background: linear-gradient(180deg, #064e3b 0%, #065f46 40%, #047857 100%) !important;
+  background: linear-gradient(180deg, #eef7ef 0%, #edf7ec 100%) !important;
   display: flex;
   flex-direction: column;
   border-radius: 0 20px 20px 0;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   overflow: hidden;
-  box-shadow: 4px 0 20px rgba(6, 78, 59, 0.2);
+  box-shadow: 4px 0 20px rgba(15, 23, 42, 0.08);
   height: 100vh;
 }
 
@@ -333,28 +353,30 @@ watch(() => route.fullPath, () => {
   background: transparent !important;
   border: none;
   flex: 1;
-  padding: 4px 0;
+  padding: 8px 0 4px;
 }
 
-.lib-sider :deep(.ant-menu-item) {
+.lib-sider :deep(.ant-menu-item),
+.lib-sider :deep(.ant-menu-submenu-title) {
   border-radius: 12px;
-  margin: 3px 8px;
-  height: 42px;
-  line-height: 42px;
-  color: rgba(255, 255, 255, 0.65);
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  margin: 4px 10px;
+  height: 44px;
+  line-height: 44px;
+  color: #33514b !important;
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.lib-sider :deep(.ant-menu-item:hover) {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #fff !important;
+.lib-sider :deep(.ant-menu-item:hover),
+.lib-sider :deep(.ant-menu-submenu-title:hover) {
+  background: rgba(7, 94, 67, 0.08) !important;
+  color: #064e3b !important;
   transform: translateX(3px);
 }
 
 .lib-sider :deep(.ant-menu-item-selected) {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: #1f5f55 !important;
   color: #fff !important;
-  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 20px rgba(31, 95, 85, 0.18);
   font-weight: 600;
 }
 
@@ -367,7 +389,7 @@ watch(() => route.fullPath, () => {
   align-items: center;
   gap: 12px;
   padding: 18px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(31, 95, 85, 0.08);
 }
 
 .brand-avatar {
@@ -375,8 +397,9 @@ watch(() => route.fullPath, () => {
   height: 40px;
   min-width: 40px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1f5f55;
+  color: #ffd97d;
+  border: 1px solid rgba(15, 23, 42, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -388,35 +411,73 @@ watch(() => route.fullPath, () => {
   transform: scale(1.1) rotate(-5deg);
 }
 
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .brand-name {
   font-size: 15px;
   font-weight: 800;
-  color: #fff;
+  color: #173f39;
   letter-spacing: -0.02em;
   white-space: nowrap;
 }
 
+.brand-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7d8a83;
+}
+
 .sider-footer {
-  padding: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 12px 12px;
+  border-top: 1px solid rgba(31, 95, 85, 0.08);
   margin-top: auto;
+}
+
+.portal-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  color: #d97706;
+  border: 1px solid #f2d089;
+  background: #fff5da;
+  font-size: 12px;
+  font-weight: 800;
+  width: fit-content;
+}
+
+.logout-btn {
+  border-radius: 16px;
+  height: 42px;
+  border-color: #cfe0d8;
+  color: #33514b;
+  background: #f4faf5;
+  box-shadow: none;
 }
 
 .lib-header {
   background: #fff;
-  padding: 10px 28px;
+  margin: 16px 20px 0 20px;
+  border-radius: 20px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
   position: sticky;
-  top: 0;
+  top: 16px;
   z-index: 10;
-  height: 72px;
-  min-height: 72px;
+  height: 76px;
+  min-height: 76px;
   line-height: normal !important;
-  flex: 0 0 72px;
+  flex: 0 0 76px;
 }
 
 .header-left {
@@ -454,6 +515,13 @@ watch(() => route.fullPath, () => {
   white-space: nowrap;
 }
 
+.header-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #8c98a5;
+  white-space: nowrap;
+}
+
 .header-right {
   margin-left: auto;
 }
@@ -480,6 +548,16 @@ watch(() => route.fullPath, () => {
   background: #f7f7f4;
   border: 1px solid #e7e3d7;
   color: #334155;
+}
+
+.lang-pill {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: #f7f7f4;
+  border: 1px solid #e7e3d7;
+  color: #33514b;
+  font-weight: 700;
 }
 
 .header-profile {
@@ -526,10 +604,10 @@ watch(() => route.fullPath, () => {
 }
 
 .lib-content {
-  padding: 28px;
+  padding: 20px;
   overflow-y: auto;
-  background: #f7f9f8;
-  height: calc(100vh - 72px);
+  background: linear-gradient(180deg, #f7faf7 0%, #f3f6f0 100%);
+  height: calc(100vh - 92px);
   min-height: 0;
 }
 
