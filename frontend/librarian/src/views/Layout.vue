@@ -51,10 +51,10 @@
       </a-menu>
 
       <div class="sider-footer">
-        <div class="portal-pill">ADMIN PORTAL</div>
+        <div class="portal-pill">THỦ THƯ PORTAL</div>
         <a-button class="logout-btn" block @click="doLogout">
           <template #icon><LogoutOutlined /></template>
-          <span v-if="!collapsed">Logout</span>
+          <span v-if="!collapsed">Đăng xuất</span>
         </a-button>
       </div>
     </a-layout-sider>
@@ -92,7 +92,7 @@
             <a-avatar size="40" class="header-avatar" :src="avatarUrl || undefined">{{ initials }}</a-avatar>
             <div class="profile-meta">
               <span class="profile-name">{{ displayName }}</span>
-              <span class="profile-role">{{ userInfo?.role || 'Admin' }}</span>
+              <span class="profile-role">{{ roleLabel }}</span>
             </div>
           </div>
         </a-space>
@@ -270,6 +270,12 @@ const userInfo = computed(() => sessionUserInfo.value)
 const displayName = computed(() => extractDisplayName(userInfo.value))
 const initials = computed(() => getInitialsFromName(displayName.value))
 const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
+const roleLabel = computed(() => {
+  const role = String(userInfo.value?.role || '').trim().toLowerCase()
+  if (role === 'librarian' || role === 'admin') return 'Thủ thư'
+  if (role === 'reader') return 'Độc giả'
+  return userInfo.value?.role || 'Thủ thư'
+})
 
 const pageSub = computed(() => {
   const sub = {

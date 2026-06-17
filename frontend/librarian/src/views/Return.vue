@@ -30,10 +30,13 @@
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'reader'">
-            <a-space>
-              <a-avatar class="reader-avatar">{{ store.cardNumberOf(record).slice(0, 1) }}</a-avatar>
-              <span class="font-medium">{{ store.cardNumberOf(record) }}</span>
-            </a-space>
+            <div class="reader-cell">
+              <a-avatar class="reader-avatar">{{ (readerName(record) || store.cardNumberOf(record)).slice(0, 1) }}</a-avatar>
+              <div>
+                <div class="font-medium">{{ readerName(record) }}</div>
+                <div class="muted">{{ store.cardNumberOf(record) }}</div>
+              </div>
+            </div>
           </template>
 
           <template v-else-if="column.key === 'book'">
@@ -198,6 +201,10 @@ function bookTitle(loan = {}) {
   return loan.TenSach || loan.tenSach || loan.Title || loan.title || '—'
 }
 
+function readerName(loan = {}) {
+  return loan.ReaderName || loan.readerName || loan.FullName || loan.fullName || loan.Username || loan.username || store.cardNumberOf(loan)
+}
+
 function fmtDate(d) {
   return d ? dayjs(d).format('DD/MM/YYYY') : '—'
 }
@@ -267,6 +274,12 @@ onMounted(() => {
 .reader-avatar {
   background: #e6f7ef;
   color: #047857;
+}
+
+.reader-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .font-medium { font-weight: 600; }

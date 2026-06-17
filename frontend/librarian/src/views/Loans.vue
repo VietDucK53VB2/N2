@@ -49,7 +49,19 @@
         row-key="Id"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'Status'">
+          <template v-if="column.key === 'reader'">
+            <div>
+              <div class="font-medium">{{ readerNameOf(record) }}</div>
+              <div class="muted">{{ store.cardNumberOf(record) }}</div>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'book'">
+            <div>
+              <div class="font-medium">{{ bookTitleOf(record) }}</div>
+              <div class="muted">Book ID: {{ store.bookIdOf(record) }}</div>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'Status'">
             <a-tag :color="statusColor(record.Status)">{{ statusLabel(record.Status) }}</a-tag>
           </template>
           <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDate(record.BorrowedAt) }}</template>
@@ -139,8 +151,8 @@ const conditionForm = reactive({
 })
 
 const columns = [
-  { title: 'Mã thẻ', dataIndex: 'CardNumber', key: 'CardNumber', width: 140 },
-  { title: 'Book ID', dataIndex: 'BookId', key: 'BookId', width: 100 },
+  { title: 'Độc giả', key: 'reader', width: 220 },
+  { title: 'Sách', key: 'book' },
   { title: 'Ngày mượn', key: 'BorrowedAt', width: 120 },
   { title: 'Hạn trả', key: 'DueAt', width: 120 },
   { title: 'Trạng thái', key: 'Status', width: 160 },
@@ -233,6 +245,32 @@ async function doRejectReturn(r) {
 async function readError(res) {
   const data = await res.json().catch(() => null)
   return data?.Message || data?.message || 'Lỗi xử lý.'
+}
+
+function readerNameOf(record = {}) {
+  return (
+    record.ReaderName ||
+    record.readerName ||
+    record.FullName ||
+    record.fullName ||
+    record.Username ||
+    record.username ||
+    store.cardNumberOf(record)
+  )
+}
+
+function bookTitleOf(record = {}) {
+  return (
+    record.TenSach ||
+    record.tenSach ||
+    record.Title ||
+    record.title ||
+    record.BookTitle ||
+    record.bookTitle ||
+    record.BookName ||
+    record.bookName ||
+    `Book #${store.bookIdOf(record)}`
+  )
 }
 
 function fmtDate(d) {
