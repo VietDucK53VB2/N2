@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibrarianStore } from '@/stores/librarian'
 import {
@@ -113,6 +113,7 @@ const route = useRoute()
 const store = useLibrarianStore()
 const collapsed = ref(true)
 const selectedKeys = ref(['overview'])
+const sessionUserInfo = ref(readSessionUserInfo())
 
 function readStoredUserInfo() {
   try {
@@ -122,18 +123,67 @@ function readStoredUserInfo() {
   }
 }
 
+function parseJwt(token) {
+  try {
+    const b = String(token || '').split('.')[1]
+    if (!b) return null
+    return JSON.parse(decodeURIComponent(
+      atob(b.replace(/-/g, '+').replace(/_/g, '/'))
+        .split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+    ))
+  } catch {
+    return null
+  }
+}
+
+function readTokenInfo() {
+  const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+  return token ? (parseJwt(token) || {}) : {}
+}
+
+function isGenericName(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return [
+    'độc giả',
+    'reader',
+    'thủ thư',
+    'librarian',
+    'thành viên',
+    'bạn',
+    'guest',
+    'user',
+    'admin',
+    'quản trị viên'
+  ].includes(normalized)
+}
+
+function firstMeaningful(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const text = String(value).trim()
+    if (text && !isGenericName(text)) return text
+  }
+  return ''
+}
+
 function extractDisplayName(info = {}) {
-  const value =
-    info.fullName ||
-    info.FullName ||
-    info.name ||
-    info.Name ||
-    info.username ||
-    info.Username ||
-    info.displayName ||
-    info.DisplayName ||
+  return firstMeaningful(
+    info.fullName,
+    info.FullName,
+    info.displayName,
+    info.DisplayName,
+    info.name,
+    info.Name,
+    info.username,
+    info.Username,
+    info.preferred_username,
+    info.preferredUsername,
+    info.unique_name,
+    info.uniqueName,
+    info.sub,
+    info.Subject,
     'Thủ thư'
-  return String(value || 'Thủ thư').trim() || 'Thủ thư'
+  ) || 'Thủ thư'
 }
 
 function getInitialsFromName(name = '') {
@@ -142,7 +192,65 @@ function getInitialsFromName(name = '') {
   return parts.slice(-2).map(p => p[0]).join('').toUpperCase()
 }
 
-const userInfo = computed(() => readStoredUserInfo())
+function readSessionUserInfo() {
+  const stored = readStoredUserInfo()
+  const tokenInfo = readTokenInfo()
+  const merged = {
+    ...stored,
+    ...tokenInfo,
+    fullName: firstMeaningful(
+      stored.fullName,
+      stored.FullName,
+      tokenInfo.fullName,
+      tokenInfo.FullName,
+      stored.displayName,
+      stored.DisplayName,
+      tokenInfo.displayName,
+      tokenInfo.DisplayName,
+      tokenInfo.name,
+      tokenInfo.Name,
+      tokenInfo.username,
+      tokenInfo.Username,
+      stored.username,
+      stored.Username,
+      'Thủ thư'
+    ),
+    username: firstMeaningful(
+      stored.username,
+      stored.Username,
+      tokenInfo.username,
+      tokenInfo.Username,
+      tokenInfo.name,
+      tokenInfo.Name,
+      tokenInfo.unique_name,
+      tokenInfo.uniqueName,
+      tokenInfo.preferred_username,
+      tokenInfo.preferredUsername
+    ),
+    role: firstMeaningful(
+      stored.role,
+      stored.Role,
+      tokenInfo.role,
+      tokenInfo.Role,
+      tokenInfo['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'],
+      tokenInfo['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role'],
+      'Admin'
+    ) || 'Admin',
+    avatarUrl: stored.avatarUrl || stored.AvatarUrl || stored.avatar || stored.Avatar || ''
+  }
+
+  if (!merged.fullName || isGenericName(merged.fullName)) {
+    merged.fullName = merged.username || stored.cardNumber || tokenInfo.cardNumber || 'Thủ thư'
+  }
+
+  return merged
+}
+
+function syncSessionUser() {
+  sessionUserInfo.value = readSessionUserInfo()
+}
+
+const userInfo = computed(() => sessionUserInfo.value)
 const displayName = computed(() => extractDisplayName(userInfo.value))
 const initials = computed(() => getInitialsFromName(displayName.value))
 const avatarUrl = computed(() => userInfo.value?.avatarUrl || userInfo.value?.AvatarUrl || userInfo.value?.avatar || userInfo.value?.Avatar || '')
@@ -175,6 +283,19 @@ const pageSub = computed(() => subs[route.name] || '')
 watch(() => route.name, n => { selectedKeys.value = [n || 'overview'] }, { immediate: true })
 function onMenuClick({ key }) { router.push({ name: key }) }
 function doLogout() { localStorage.clear(); window.location.href = window.location.origin.replace(/:\d+$/, '') + '/login' }
+
+onMounted(() => {
+  syncSessionUser()
+  window.addEventListener('storage', syncSessionUser)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', syncSessionUser)
+})
+
+watch(() => route.fullPath, () => {
+  syncSessionUser()
+}, { immediate: true })
 </script>
 
 <style scoped>
