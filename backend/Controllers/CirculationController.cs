@@ -2026,7 +2026,7 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("settings/borrow-policy")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<object>> GetBorrowPolicyAsync(CancellationToken cancellationToken)
     {
         var policy = await GetPricePolicyAsync(cancellationToken);
@@ -2048,7 +2048,7 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("settings/prices")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<object>> GetPricePolicySettingsAsync(CancellationToken cancellationToken)
     {
         var policy = await GetPricePolicyAsync(cancellationToken);
