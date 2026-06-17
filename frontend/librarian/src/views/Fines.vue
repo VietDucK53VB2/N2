@@ -261,7 +261,7 @@ async function approve(item) {
   if (!id) return
   actionId.value = actionKey(item, 'approve')
   try {
-    const res = await libStore.markFinePaid(id)
+    const res = await libStore.payFine(id)
     if (res.ok) message.success('Đã duyệt thanh toán phí phạt.')
     else message.error(await readError(res))
   } finally {
