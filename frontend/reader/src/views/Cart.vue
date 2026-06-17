@@ -43,8 +43,8 @@
                   </div>
 
                   <div class="field-box">
-                    <span class="field-label">Số ngày</span>
-                    <strong class="field-value">{{ item.borrowDays }}</strong>
+                    <span class="field-label">Thời lượng</span>
+                    <strong class="field-value">{{ item.borrowDurationText }}</strong>
                   </div>
 
                   <div class="field-box full-width">
@@ -57,6 +57,7 @@
                     <v-text-field
                       v-model="item.borrowDueAt"
                       type="datetime-local"
+                      step="1"
                       density="compact"
                       variant="outlined"
                       hide-details
@@ -122,7 +123,7 @@
 <script setup>
 import { computed, onMounted, watch, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { formatMoney, getDisplayName } from '@/utils/helpers'
+import { formatMoney, getDisplayName, formatDurationText } from '@/utils/helpers'
 
 const store = useAppStore()
 const submitting = ref(false)
@@ -138,13 +139,15 @@ function ensureItem(item) {
   if (!item.quantity || item.quantity < 1) item.quantity = 1
   if (!item.borrowDays || item.borrowDays < 1) item.borrowDays = 1
   if (!item.borrowDays || Number.isNaN(Number(item.borrowDays))) item.borrowDays = 1
-  if (!item.borrowDueAt) item.borrowDueAt = addDaysToLocalIso(14)
+  if (!item.borrowDueAt) item.borrowDueAt = addHoursToLocalIso(1)
+  item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
 }
 
 function syncItem(item) {
   ensureItem(item)
   const days = daysFromDueAt(item.borrowDueAt)
   item.borrowDays = days
+  item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
   store.cartItems = [...store.cartItems]
 }
 
@@ -157,9 +160,9 @@ function lineTotal(item) {
   return pricePerDay() * Number(item.quantity || 1) * Number(item.borrowDays || 1)
 }
 
-function addDaysToLocalIso(days) {
+function addHoursToLocalIso(hours) {
   const base = new Date()
-  base.setDate(base.getDate() + Number(days || 1))
+  base.setTime(base.getTime() + Number(hours || 1) * 60 * 60 * 1000)
   const pad = value => String(value).padStart(2, '0')
   return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`
 }
@@ -179,6 +182,7 @@ function normalizeCart() {
     const beforeDueAt = item.borrowDueAt
     ensureItem(item)
     item.borrowDays = daysFromDueAt(item.borrowDueAt)
+    item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
     if (beforeDays !== item.borrowDays || beforeQty !== item.quantity) changed = true
     if (beforeDueAt !== item.borrowDueAt) changed = true
   })

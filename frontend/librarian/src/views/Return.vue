@@ -47,12 +47,12 @@
           </template>
 
           <template v-else-if="column.key === 'borrowedAt'">
-            {{ fmtDate(record.BorrowedAt || record.borrowedAt) }}
+            {{ fmtDateTime(record.BorrowedAt || record.borrowedAt) }}
           </template>
 
           <template v-else-if="column.key === 'dueAt'">
             <span :class="{ overdue: store.isOverdue(record) }">
-              {{ fmtDate(record.DueAt || record.dueAt) }}
+              {{ fmtDateTime(record.DueAt || record.dueAt) }}
             </span>
           </template>
 
@@ -205,8 +205,8 @@ function readerName(loan = {}) {
   return loan.ReaderName || loan.readerName || loan.FullName || loan.fullName || loan.Username || loan.username || store.cardNumberOf(loan)
 }
 
-function fmtDate(d) {
-  return d ? dayjs(d).format('DD/MM/YYYY') : '—'
+function fmtDateTime(d) {
+  return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
 
 onMounted(() => {

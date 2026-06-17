@@ -7,6 +7,31 @@ export function formatDate(d) {
   return dayjs(d).format('DD/MM/YYYY')
 }
 
+export function formatDateTime(d) {
+  if (!d) return '—'
+  const parsed = dayjs(d)
+  return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm:ss') : String(d)
+}
+
+export function formatDurationParts(from, to = new Date()) {
+  if (!from || !to) return null
+  const start = new Date(from)
+  const end = new Date(to)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  const diff = Math.max(0, Math.abs(end.getTime() - start.getTime()))
+  const days = Math.floor(diff / 86400000)
+  const hours = Math.floor((diff % 86400000) / 3600000)
+  const minutes = Math.floor((diff % 3600000) / 60000)
+  const seconds = Math.floor((diff % 60000) / 1000)
+  return { days, hours, minutes, seconds, totalMs: diff }
+}
+
+export function formatDurationText(from, to = new Date()) {
+  const parts = formatDurationParts(from, to)
+  if (!parts) return '—'
+  return `${parts.days} ngày ${String(parts.hours).padStart(2, '0')}:${String(parts.minutes).padStart(2, '0')}:${String(parts.seconds).padStart(2, '0')}`
+}
+
 export function formatMoney(v) {
   return new Intl.NumberFormat('vi-VN').format(v) + ' đ'
 }

@@ -41,8 +41,8 @@
           <template v-if="column.key === 'Status'">
             <a-tag :color="statusColor(record.Status)">{{ statusLabel(record.Status) }}</a-tag>
           </template>
-          <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDate(record.BorrowedAt) }}</template>
-          <template v-else-if="column.key === 'DueAt'">{{ fmtDate(record.DueAt) }}</template>
+          <template v-else-if="column.key === 'BorrowedAt'">{{ fmtDateTime(record.BorrowedAt) }}</template>
+          <template v-else-if="column.key === 'DueAt'">{{ fmtDateTime(record.DueAt) }}</template>
         </template>
       </a-table>
     </a-card>
@@ -112,8 +112,8 @@ function searchByCard(c) {
   }
 }
 
-function fmtDate(d) {
-  return d ? dayjs(d).format('DD/MM/YYYY') : '—'
+function fmtDateTime(d) {
+  return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
 
 function statusColor(s) {

@@ -37,14 +37,14 @@
               <v-col cols="6">
                 <div class="date-box">
                   <span class="date-label">Ngày mượn</span>
-                  <span class="date-value">{{ formatDate(tx.BorrowedAt || tx.borrowedAt) }}</span>
+                  <span class="date-value">{{ formatDateTime(tx.BorrowedAt || tx.borrowedAt) }}</span>
                 </div>
               </v-col>
               <v-col cols="6">
                 <div class="date-box">
                   <span class="date-label">Hạn trả</span>
                   <span class="date-value" :class="{ 'text-error': store.isOverdue(tx) }">
-                    {{ formatDate(tx.DueAt || tx.dueAt) }}
+                    {{ formatDateTime(tx.DueAt || tx.dueAt) }}
                   </span>
                 </div>
               </v-col>
@@ -161,7 +161,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import {
   getReaderCard,
@@ -170,7 +170,7 @@ import {
   reviewBook as apiReviewBook,
   fetchBookReviews
 } from '@/utils/api'
-import { titleColor, formatDate, daysLeft } from '@/utils/helpers'
+import { titleColor, formatDateTime as formatDateTimeText, formatDurationText, daysLeft } from '@/utils/helpers'
 import dayjs from 'dayjs'
 import 'dayjs/locale/vi'
 dayjs.locale('vi')
@@ -191,6 +191,10 @@ const reviewComment = ref('')
 const reviewError = ref('')
 const reviewing = ref(false)
 const reviewedBookIds = ref(new Set())
+const nowTick = ref(Date.now())
+const tickHandle = setInterval(() => {
+  nowTick.value = Date.now()
+}, 1000)
 
 const visibleTransactions = computed(() => [...store.pendingTransactions, ...store.activeTransactions])
 const filteredBooks = computed(() => {
@@ -228,9 +232,12 @@ function statusIcon(tx) {
 function statusText(tx) {
   if (store.isPending(tx)) return 'Chờ duyệt mượn'
   if (store.isReturnPending(tx)) return 'Chờ xác nhận trả'
-  if (store.isOverdue(tx)) return 'Quá hạn'
-  const d = daysLeft(tx.DueAt || tx.dueAt)
-  return d !== null ? `Còn ${d} ngày` : 'Đang mượn'
+  if (store.isOverdue(tx)) {
+    const dueAt = tx.DueAt || tx.dueAt
+    return dueAt ? `Quá hạn ${formatDurationText(dueAt, nowTick.value)}` : 'Quá hạn'
+  }
+  const dueAt = tx.DueAt || tx.dueAt
+  return dueAt ? `Còn lại ${formatDurationText(nowTick.value, dueAt)}` : 'Đang mượn'
 }
 
 function requestDate(tx) {
@@ -238,28 +245,13 @@ function requestDate(tx) {
 }
 
 function formatDateTime(value) {
-  if (!value) return '—'
-  const parsed = dayjs(value)
-  return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm:ss') : formatDate(value)
-}
-
-function formatDuration(from, to = new Date()) {
-  if (!from || !to) return '—'
-  const start = new Date(from)
-  const end = new Date(to)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—'
-  const diff = Math.max(0, Math.abs(end.getTime() - start.getTime()))
-  const days = Math.floor(diff / 86400000)
-  const hours = Math.floor((diff % 86400000) / 3600000)
-  const minutes = Math.floor((diff % 3600000) / 60000)
-  const seconds = Math.floor((diff % 60000) / 1000)
-  return `${days} ngày ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return formatDateTimeText(value)
 }
 
 function loanTimeText(tx) {
   if (store.isPending(tx)) return 'Chưa bắt đầu tính thời gian mượn'
   const borrowedAt = requestDate(tx)
-  return borrowedAt ? `Đã mượn: ${formatDuration(borrowedAt)}` : 'Đã mượn'
+  return borrowedAt ? `Đã mượn: ${formatDurationText(borrowedAt, nowTick.value)}` : 'Đã mượn'
 }
 
 function timeRemainderText(tx) {
@@ -270,9 +262,9 @@ function timeRemainderText(tx) {
   const due = new Date(dueAt)
   if (Number.isNaN(due.getTime())) return ''
   if (due.getTime() >= now.getTime()) {
-    return `Còn ${formatDuration(now, due)}`
+    return `Còn lại: ${formatDurationText(nowTick.value, dueAt)}`
   }
-  return `Quá hạn ${formatDuration(due, now)}`
+  return `Quá hạn: ${formatDurationText(dueAt, nowTick.value)}`
 }
 
 function reviewButtonText(tx) {
@@ -295,9 +287,16 @@ function returnButtonText(tx) {
 function progressPercent(tx) {
   if (store.isPending(tx)) return 8
   if (store.isReturnPending(tx)) return 100
-  const d = daysLeft(tx.DueAt || tx.dueAt)
-  if (d === null) return 50
-  return Math.min(100, Math.max(0, (1 - d / 14) * 100))
+  const borrowedAt = requestDate(tx)
+  const dueAt = tx.DueAt || tx.dueAt
+  const start = borrowedAt ? new Date(borrowedAt) : null
+  const due = dueAt ? new Date(dueAt) : null
+  if (!start || !due || Number.isNaN(start.getTime()) || Number.isNaN(due.getTime()) || due.getTime() <= start.getTime()) {
+    return 50
+  }
+  const elapsed = Math.max(0, nowTick.value - start.getTime())
+  const total = Math.max(1, due.getTime() - start.getTime())
+  return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)))
 }
 
 function progressColor(tx) {
@@ -424,6 +423,7 @@ function hasReviewed(tx) {
 }
 
 onMounted(loadData)
+onUnmounted(() => clearInterval(tickHandle))
 </script>
 
 <style scoped lang="scss">

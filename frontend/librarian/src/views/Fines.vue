@@ -46,7 +46,7 @@
           <template v-if="column.key === 'Amount'">
             <span class="money">{{ Number(record.Amount || record.amount || 0).toLocaleString() }} đ</span>
           </template>
-          <template v-else-if="column.key === 'CreatedAt'">{{ fmtDate(record.CreatedAt || record.createdAt) }}</template>
+          <template v-else-if="column.key === 'CreatedAt'">{{ fmtDateTime(record.CreatedAt || record.createdAt) }}</template>
           <template v-else-if="column.key === 'IsPaid'">
             <a-tag :color="(record.IsPaid || record.isPaid) ? 'green' : 'red'">
               {{ (record.IsPaid || record.isPaid) ? 'Đã thu' : 'Chưa thu' }}
@@ -98,8 +98,8 @@ async function markPaid(r) {
   payingId.value = null
 }
 
-function fmtDate(d) {
-  return d ? dayjs(d).format('DD/MM/YYYY') : '—'
+function fmtDateTime(d) {
+  return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'
 }
 
 onMounted(() => {

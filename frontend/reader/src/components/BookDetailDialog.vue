@@ -112,6 +112,7 @@
           <v-text-field
             v-model="borrowReturnAt"
             type="datetime-local"
+            step="1"
             label="Ngày giờ trả sách"
             density="comfortable"
             variant="outlined"
@@ -152,7 +153,7 @@
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { borrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
-import { titleColor, formatMoney } from '@/utils/helpers'
+import { titleColor, formatMoney, formatDurationText, formatDurationParts } from '@/utils/helpers'
 import dayjs from 'dayjs'
 import 'dayjs/locale/vi'
 dayjs.locale('vi')
@@ -187,19 +188,16 @@ const heroBg = computed(() => {
 })
 const maxQuantity = computed(() => Math.max(1, Math.min(Number(props.book?.soBanConLai || 1), 10)))
 const unitPrice = computed(() => getBorrowUnitPrice(props.book))
-const borrowStart = computed(() => new Date())
+const borrowStart = ref(new Date())
+const borrowDurationParts = computed(() => formatDurationParts(borrowStart.value, borrowReturnAt.value))
 const borrowDuration = computed(() => {
-  if (!borrowReturnAt.value) return 14
-  const start = dayjs(borrowStart.value)
-  const end = dayjs(borrowReturnAt.value)
-  if (!start.isValid() || !end.isValid()) return 14
-  const diffDays = end.diff(start, 'minute') / (60 * 24)
-  return Math.max(1, Math.ceil(diffDays))
+  const totalMs = borrowDurationParts.value?.totalMs ?? 0
+  return Math.max(1, Math.ceil(totalMs / (24 * 60 * 60 * 1000)))
 })
 const totalPrice = computed(() => unitPrice.value * quantity.value * borrowDuration.value)
 const durationSummary = computed(() => {
-  const duration = borrowDuration.value
-  return `${formatMoney(unitPrice.value)} x ${duration} ngày x ${quantity.value} cuốn`
+  const span = formatDurationText(borrowStart.value, borrowReturnAt.value)
+  return `${span} • ${quantity.value} cuốn`
 })
 
 function mapReview(review = {}) {
@@ -248,8 +246,8 @@ async function loadReviews(bookId) {
 
 watch(() => props.book?.id, () => {
   quantity.value = 1
-  const now = new Date()
-  borrowReturnAt.value = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+  borrowStart.value = new Date()
+  borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss')
   errorMessage.value = ''
   loadReviews(props.book?.id)
 }, { immediate: true })
@@ -259,7 +257,7 @@ watch(borrowReturnAt, () => {
   const parsed = dayjs(borrowReturnAt.value)
   if (!parsed.isValid()) return
   if (parsed.isBefore(dayjs(borrowStart.value), 'minute')) {
-    borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'day').format('YYYY-MM-DDTHH:mm')
+    borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss')
   }
 })
 
@@ -283,7 +281,10 @@ async function handleBorrow() {
 
   borrowing.value = true
   try {
-    const response = await borrowBook(card, bookId, quantity.value)
+    const response = await borrowBook(card, bookId, quantity.value, {
+      borrowedAt: borrowStart.value.toISOString(),
+      dueAt: dayjs(borrowReturnAt.value).toISOString()
+    })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
       errorMessage.value = data?.message || data?.Message || 'Không mượn được sách. Vui lòng thử lại.'

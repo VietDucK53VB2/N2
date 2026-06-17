@@ -345,11 +345,22 @@ export async function removeFavoriteBook(bookId) {
   return r.ok
 }
 
-export async function borrowBook(cardNumber, bookId, quantity = 1) {
+export async function borrowBook(cardNumber, bookId, quantity = 1, extra = {}) {
   if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  const payload = {
+    cardNumber,
+    bookId: String(bookId),
+    quantity
+  }
+  if (extra?.borrowedAt) payload.BorrowedAt = extra.borrowedAt
+  if (extra?.dueAt) payload.DueAt = extra.dueAt
+  if (extra?.readerName) payload.ReaderName = extra.readerName
+  if (extra?.readerUsername) payload.ReaderUsername = extra.readerUsername
+  if (extra?.userId) payload.UserId = extra.userId
+  if (extra?.isbn) payload.Isbn = extra.isbn
   const r = await authFetchWithFallback('/borrow', {
     method: 'POST',
-    body: JSON.stringify({ cardNumber, bookId: String(bookId), quantity })
+    body: JSON.stringify(payload)
   })
   return r
 }

@@ -266,9 +266,9 @@ export const useAppStore = defineStore('app', () => {
     localStorage.setItem('readerCartItems', JSON.stringify(cartItems.value))
   }
 
-  function addDaysToLocalIso(days) {
+  function addHoursToLocalIso(hours) {
     const base = new Date()
-    base.setDate(base.getDate() + Number(days || 1))
+    base.setTime(base.getTime() + Number(hours || 1) * 60 * 60 * 1000)
     const pad = value => String(value).padStart(2, '0')
     return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`
   }
@@ -286,7 +286,7 @@ export const useAppStore = defineStore('app', () => {
         imageUrl: book.imageUrl || book.ImageUrl || '',
         quantity: Math.min(10, Number(quantity || 1)),
         borrowDays: 1,
-        borrowDueAt: addDaysToLocalIso(1),
+        borrowDueAt: addHoursToLocalIso(1),
         soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
       })
     }
