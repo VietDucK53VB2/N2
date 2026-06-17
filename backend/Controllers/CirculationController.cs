@@ -2708,6 +2708,12 @@ public sealed class CirculationController : ControllerBase
 
     private async Task<int?> GetBookIdByIsbnAsync(string isbn, CancellationToken cancellationToken)
     {
+        var normalizedIsbn = NormalizeIsbn(isbn);
+        if (string.IsNullOrWhiteSpace(normalizedIsbn))
+        {
+            return null;
+        }
+
         try
         {
             var client = _httpClientFactory.CreateClient();
@@ -2715,11 +2721,49 @@ public sealed class CirculationController : ControllerBase
             var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/search?q={Uri.EscapeDataString(isbn)}", cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return null;
-            var books = await response.Content.ReadFromJsonAsync<List<System.Text.Json.JsonElement>>(cancellationToken);
-            var book = books?.FirstOrDefault(b => b.TryGetProperty("isbn", out var i) && i.GetString() == isbn);
-            if (book is null || !book.Value.TryGetProperty("id", out var idProp))
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(body))
+            {
                 return null;
-            return idProp.GetInt32();
+            }
+
+            using var document = JsonDocument.Parse(body);
+            var candidateElements = new List<JsonElement>();
+
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                candidateElements.AddRange(document.RootElement.EnumerateArray());
+            }
+            else if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                candidateElements.Add(document.RootElement);
+
+                foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+                {
+                    if (document.RootElement.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+                    {
+                        candidateElements.AddRange(nested.EnumerateArray());
+                    }
+                }
+            }
+
+            foreach (var book in candidateElements)
+            {
+                var candidateIsbn = NormalizeIsbn(ReadString(book, "isbn", "Isbn", "ISBN"));
+                if (!string.Equals(candidateIsbn, normalizedIsbn, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var id = ReadInt(book, "id", "Id", "bookId", "BookId");
+                if (id > 0)
+                {
+                    return id;
+                }
+            }
+
+            return null;
         }
         catch
         {
@@ -3334,6 +3378,25 @@ public sealed class CirculationController : ControllerBase
         }
 
         return int.TryParse(value.GetString(), out var parsed) ? parsed : 0;
+    }
+
+    private static string NormalizeIsbn(string? isbn)
+    {
+        if (string.IsNullOrWhiteSpace(isbn))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(isbn.Length);
+        foreach (var ch in isbn)
+        {
+            if (!char.IsWhiteSpace(ch) && ch != '-')
+            {
+                builder.Append(char.ToUpperInvariant(ch));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static double ReadDecimal(JsonElement element, params string[] names)
