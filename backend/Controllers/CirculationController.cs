@@ -148,11 +148,11 @@ public sealed class CirculationController : ControllerBase
             CardNumber = transaction.CardNumber,
             ReaderName = transaction.ReaderName,
             ReaderUsername = transaction.ReaderUsername,
-            BorrowedAt = transaction.BorrowedAt,
-            DueAt = transaction.DueAt,
-            CreatedAt = transaction.BorrowedAt,
-            UpdatedAt = transaction.BorrowedAt,
-            RequestDate = transaction.BorrowedAt
+            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
+            DueAt = AsUtcDateTime(transaction.DueAt),
+            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            UpdatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            RequestDate = AsUtcDateTime(transaction.BorrowedAt)
         });
     }
 
@@ -573,11 +573,11 @@ public sealed class CirculationController : ControllerBase
             Isbn = transaction.Isbn,
             UserId = transaction.UserId,
             CardNumber = transaction.CardNumber,
-            BorrowedAt = transaction.BorrowedAt,
-            ReturnedAt = returnedAt,
-            CreatedAt = transaction.BorrowedAt,
-            UpdatedAt = returnedAt,
-            RequestDate = transaction.BorrowedAt,
+            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
+            ReturnedAt = AsUtcDateTime(returnedAt),
+            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            UpdatedAt = AsUtcDateTime(returnedAt),
+            RequestDate = AsUtcDateTime(transaction.BorrowedAt),
             FineAmount = fineAmount,
             Condition = condition,
             ReturnedToCatalog = shouldReturnCopyToCatalog
@@ -726,9 +726,9 @@ public sealed class CirculationController : ControllerBase
                 r.CardNumber,
                 ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
                 ReaderUsername = readerUsername,
-                BorrowedAt = r.BorrowedAt,
-                DueAt = r.DueAt,
-                ReturnedAt = r.ReturnedAt,
+                BorrowedAt = ToIsoUtc(r.BorrowedAt),
+                DueAt = ToIsoUtc(r.DueAt),
+                ReturnedAt = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
                 createdAt = ToIsoUtc(r.BorrowedAt),
                 updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
                 requestDate = ToIsoUtc(r.BorrowedAt),
@@ -1411,7 +1411,7 @@ public sealed class CirculationController : ControllerBase
                 transaction.ReaderName,
                 transaction.ReaderUsername,
                 BorrowedAt = approvedAt,
-                DueAt = transaction.DueAt,
+                DueAt = AsUtcDateTime(transaction.DueAt),
                 CreatedAt = approvedAt,
                 UpdatedAt = approvedAt,
                 RequestDate = approvedAt,
@@ -1738,6 +1738,11 @@ public sealed class CirculationController : ControllerBase
     private static string ToIsoUtc(DateTime date)
     {
         return NormalizeUtc(date).ToString("O", CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime AsUtcDateTime(DateTime date)
+    {
+        return DateTime.SpecifyKind(NormalizeUtc(date), DateTimeKind.Utc);
     }
 
     private async Task<int> GetActiveBorrowsCountAsync(string bookId, CancellationToken cancellationToken)
