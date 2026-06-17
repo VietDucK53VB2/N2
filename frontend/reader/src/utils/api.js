@@ -13,6 +13,10 @@ export function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
 }
 
+export function isAuthSessionReady() {
+  return Boolean(getToken()) || authBootstrapComplete
+}
+
 export function getReaderCard() {
   return localStorage.getItem('readerCard') || getCachedUserInfo().cardNumber || null
 }
@@ -252,6 +256,7 @@ async function fetchJsonFromCandidates(paths = []) {
 }
 
 export async function fetchBooks() {
+  if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
       `${window.location.origin}/api/books`,
@@ -264,6 +269,7 @@ export async function fetchBooks() {
 
 export async function fetchTransactions(cardNumber) {
   if (!cardNumber) return []
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback(`/transactions?cardNumber=${encodeURIComponent(cardNumber)}&pageSize=200`)
     if (!r.ok) return []
@@ -272,6 +278,7 @@ export async function fetchTransactions(cardNumber) {
 }
 
 export async function fetchAllTransactions() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/transactions?pageSize=200', { redirectOnAuthError: false })
     if (!r.ok) return []
@@ -280,6 +287,7 @@ export async function fetchAllTransactions() {
 }
 
 export async function fetchEvents() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/events?pageSize=200')
     if (!r.ok) return []
@@ -290,6 +298,7 @@ export async function fetchEvents() {
 }
 
 export async function fetchFines() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/fines')
     if (!r.ok) return []
@@ -298,6 +307,7 @@ export async function fetchFines() {
 }
 
 export async function fetchFavorites() {
+  if (!isAuthSessionReady()) return null
   try {
     const r = await authFetchWithFallback('/favorites', { redirectOnAuthError: false })
     if (!r.ok) return null
@@ -309,6 +319,7 @@ export async function fetchFavorites() {
 
 export async function saveFavoriteBook(book = {}) {
   if (!book?.id) return null
+  if (!isAuthSessionReady()) return null
   const r = await authFetchWithFallback('/favorites', {
     method: 'POST',
     body: JSON.stringify({
@@ -327,6 +338,7 @@ export async function saveFavoriteBook(book = {}) {
 
 export async function removeFavoriteBook(bookId) {
   if (!bookId) return false
+  if (!isAuthSessionReady()) return false
   const r = await authFetchWithFallback(`/favorites/${encodeURIComponent(String(bookId))}`, {
     method: 'DELETE'
   })
@@ -334,6 +346,7 @@ export async function removeFavoriteBook(bookId) {
 }
 
 export async function borrowBook(cardNumber, bookId, quantity = 1) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   const r = await authFetchWithFallback('/borrow', {
     method: 'POST',
     body: JSON.stringify({ cardNumber, bookId: String(bookId), quantity })
@@ -342,6 +355,7 @@ export async function borrowBook(cardNumber, bookId, quantity = 1) {
 }
 
 export async function returnBook(cardNumber, bookId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   const r = await authFetchWithFallback('/return', {
     method: 'POST',
     body: JSON.stringify({ cardNumber, bookId: String(bookId) })
@@ -350,6 +364,7 @@ export async function returnBook(cardNumber, bookId) {
 }
 
 export async function returnTransaction(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/transactions/${transactionId}/return`, { method: 'POST' })
 }
 
@@ -358,14 +373,17 @@ export async function payFine(fineId) {
 }
 
 export async function requestFinePayment(fineId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/fines/${fineId}/request-payment`, { method: 'POST' })
 }
 
 export async function approveFinePayment(fineId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/fines/${fineId}/pay`, { method: 'POST' })
 }
 
 export async function reviewBook(bookId, { cardNumber, userId, rating, comment = '' }) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/books/${encodeURIComponent(bookId)}/reviews`, {
     method: 'POST',
     body: JSON.stringify({ cardNumber, userId, rating, comment })
@@ -374,6 +392,7 @@ export async function reviewBook(bookId, { cardNumber, userId, rating, comment =
 
 export async function fetchBookReviews(bookId = '') {
   const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : ''
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback(`/books/reviews${query}`)
     if (!r.ok) return []
