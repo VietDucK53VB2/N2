@@ -2787,8 +2787,13 @@ public sealed class CirculationController : ControllerBase
             if (!response.IsSuccessStatusCode)
                 return result;
 
-            var books = await response.Content.ReadFromJsonAsync<List<BookInfo>>(cancellationToken);
-            if (books == null)
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(body))
+                return result;
+
+            using var document = JsonDocument.Parse(body);
+            var books = ReadCatalogBookList(document.RootElement);
+            if (books.Count == 0)
                 return result;
 
             // Filter to only requested book IDs
@@ -2835,31 +2840,7 @@ public sealed class CirculationController : ControllerBase
                 }
 
                 using var document = JsonDocument.Parse(body);
-                if (document.RootElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in document.RootElement.EnumerateArray())
-                    {
-                        var candidateId = ReadInt(item, "id", "Id", "bookId", "BookId");
-                        if (candidateId == numericBookId)
-                        {
-                            return JsonSerializer.Deserialize<BookInfo>(
-                                item.GetRawText(),
-                                new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                        }
-                    }
-
-                    return null;
-                }
-
-                var rootId = ReadInt(document.RootElement, "id", "Id", "bookId", "BookId");
-                if (rootId == numericBookId)
-                {
-                    return JsonSerializer.Deserialize<BookInfo>(
-                        document.RootElement.GetRawText(),
-                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                }
-
-                return null;
+                return FindCatalogBook(document.RootElement, numericBookId);
             }
 
             var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/{numericBookId}", cancellationToken);
@@ -2883,6 +2864,115 @@ public sealed class CirculationController : ControllerBase
         {
             return null;
         }
+    }
+
+    private static List<BookInfo> ReadCatalogBookList(JsonElement root)
+    {
+        var books = new List<BookInfo>();
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                var mapped = MapCatalogBook(item);
+                if (mapped is not null)
+                {
+                    books.Add(mapped);
+                }
+            }
+
+            return books;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            var single = MapCatalogBook(root);
+            if (single is not null)
+            {
+                books.Add(single);
+            }
+
+            foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+            {
+                if (root.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in nested.EnumerateArray())
+                    {
+                        var mapped = MapCatalogBook(item);
+                        if (mapped is not null)
+                        {
+                            books.Add(mapped);
+                        }
+                    }
+                }
+            }
+        }
+
+        return books;
+    }
+
+    private static BookInfo? FindCatalogBook(JsonElement root, int bookId)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                var candidateId = ReadInt(item, "id", "Id", "ma", "Ma", "bookId", "BookId");
+                if (candidateId == bookId)
+                {
+                    return MapCatalogBook(item);
+                }
+            }
+
+            return null;
+        }
+
+        var rootId = ReadInt(root, "id", "Id", "ma", "Ma", "bookId", "BookId");
+        if (rootId == bookId)
+        {
+            return MapCatalogBook(root);
+        }
+
+        foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+        {
+            if (root.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+            {
+                var found = FindCatalogBook(nested, bookId);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static BookInfo? MapCatalogBook(JsonElement element)
+    {
+        var id = ReadInt(element, "id", "Id", "ma", "Ma", "bookId", "BookId");
+        if (id <= 0)
+        {
+            return null;
+        }
+
+        return new BookInfo
+        {
+            Id = id,
+            TenSach = ReadString(element, "tenSach", "TenSach", "tenSanPham", "TenSanPham", "title", "Title") ?? "",
+            TacGia = ReadString(element, "tacGia", "TacGia", "author", "Author") ?? "",
+            NhaSanXuat = ReadString(element, "nhaSanXuat", "NhaSanXuat", "publisher", "Publisher") ?? "",
+            TheLoai = ReadString(element, "theLoai", "TheLoai", "genre", "Genre", "category", "Category") ?? "",
+            ImageUrl = ReadString(element, "imageUrl", "ImageUrl", "anhUrl", "AnhUrl", "anhBia", "AnhBia") ?? "",
+            Isbn = ReadString(element, "isbn", "Isbn", "ISBN") ?? "",
+            NamXuatBan = ReadInt(element, "namXuatBan", "NamXuatBan", "yearPublished", "YearPublished"),
+            TomTat = ReadString(element, "tomTat", "TomTat", "moTa", "MoTa", "description", "Description") ?? "",
+            SoLuong = ReadInt(element, "soLuong", "SoLuong"),
+            SoBanDaMuon = ReadInt(element, "soBanDaMuon", "SoBanDaMuon"),
+            SoBanConLai = ReadInt(element, "soBanConLai", "SoBanConLai", "soLuongTonKho", "SoLuongTonKho"),
+            TrangThai = ReadString(element, "trangThai", "TrangThai", "status", "Status") ?? "",
+            DanhGiaTrungBinh = (decimal)ReadDecimal(element, "danhGiaTrungBinh", "DanhGiaTrungBinh", "averageRating", "AverageRating")
+        };
     }
 
     private static bool CanBorrowCatalogBook(BookInfo book, out string reason)
