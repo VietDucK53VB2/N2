@@ -1,64 +1,75 @@
 <template>
-  <a-card title="Xác nhận trả sách">
-    <div class="return-toolbar">
-      <a-input-search
-        v-model:value="keyword"
-        placeholder="Lọc theo mã thẻ, Book ID, tên sách..."
-        allow-clear
-        size="large"
-        style="max-width:420px"
-      />
+  <div class="page-shell">
+    <a-card class="hero-card">
+      <div class="hero-copy">
+        <div class="eyebrow">Xử lý trả sách</div>
+        <h2>Xác nhận trả và kiểm tra tình trạng</h2>
+        <p>Danh sách bên dưới chỉ hiển thị các phiếu đang chờ trả để xử lý nhanh hơn.</p>
+      </div>
       <a-tag color="purple">{{ filteredLoans.length }} phiếu đang chờ trả</a-tag>
-    </div>
+    </a-card>
 
-    <a-table
-      :columns="columns"
-      :data-source="filteredLoans"
-      :loading="store.loading"
-      :pagination="{ pageSize: 8 }"
-      row-key="returnKey"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'reader'">
-          <a-space>
-            <a-avatar class="reader-avatar">{{ store.cardNumberOf(record).slice(0, 1) }}</a-avatar>
-            <span class="font-medium">{{ store.cardNumberOf(record) }}</span>
-          </a-space>
-        </template>
+    <a-card class="panel-card">
+      <div class="return-toolbar">
+        <a-input-search
+          v-model:value="keyword"
+          placeholder="Lọc theo mã thẻ, Book ID, tên sách..."
+          allow-clear
+          size="large"
+          class="return-search"
+        />
+        <a-button danger ghost @click="keyword = ''">Xóa lọc</a-button>
+      </div>
 
-        <template v-else-if="column.key === 'book'">
-          <div>
-            <div class="font-medium">{{ bookTitle(record) }}</div>
-            <div class="muted">Book ID: {{ store.bookIdOf(record) }}</div>
-          </div>
-        </template>
+      <a-table
+        :columns="columns"
+        :data-source="filteredLoans"
+        :loading="store.loading"
+        :pagination="{ pageSize: 8 }"
+        row-key="returnKey"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'reader'">
+            <a-space>
+              <a-avatar class="reader-avatar">{{ store.cardNumberOf(record).slice(0, 1) }}</a-avatar>
+              <span class="font-medium">{{ store.cardNumberOf(record) }}</span>
+            </a-space>
+          </template>
 
-        <template v-else-if="column.key === 'borrowedAt'">
-          {{ fmtDate(record.BorrowedAt || record.borrowedAt) }}
-        </template>
+          <template v-else-if="column.key === 'book'">
+            <div>
+              <div class="font-medium">{{ bookTitle(record) }}</div>
+              <div class="muted">Book ID: {{ store.bookIdOf(record) }}</div>
+            </div>
+          </template>
 
-        <template v-else-if="column.key === 'dueAt'">
-          <span :class="{ overdue: store.isOverdue(record) }">
-            {{ fmtDate(record.DueAt || record.dueAt) }}
-          </span>
-        </template>
+          <template v-else-if="column.key === 'borrowedAt'">
+            {{ fmtDate(record.BorrowedAt || record.borrowedAt) }}
+          </template>
 
-        <template v-else-if="column.key === 'status'">
-          <a-tag color="purple">Chờ kiểm tra tình trạng</a-tag>
-        </template>
+          <template v-else-if="column.key === 'dueAt'">
+            <span :class="{ overdue: store.isOverdue(record) }">
+              {{ fmtDate(record.DueAt || record.dueAt) }}
+            </span>
+          </template>
 
-        <template v-else-if="column.key === 'action'">
-          <a-space>
-            <a-button type="primary" size="small" @click="openConditionDialog(record)">
-              Đánh giá & xác nhận
-            </a-button>
-            <a-button size="small" :loading="actionId === record.Id + 'no'" @click="reject(record)">
-              Chưa nhận
-            </a-button>
-          </a-space>
+          <template v-else-if="column.key === 'status'">
+            <a-tag color="purple">Chờ kiểm tra tình trạng</a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'action'">
+            <a-space>
+              <a-button type="primary" size="small" @click="openConditionDialog(record)">
+                Đánh giá & xác nhận
+              </a-button>
+              <a-button size="small" :loading="actionId === record.Id + 'no'" @click="reject(record)">
+                Chưa nhận
+              </a-button>
+            </a-space>
+          </template>
         </template>
-      </template>
-    </a-table>
+      </a-table>
+    </a-card>
 
     <a-modal
       v-model:open="conditionDialog"
@@ -70,9 +81,7 @@
     >
       <div v-if="selectedLoan" class="condition-summary">
         <div class="font-medium">{{ bookTitle(selectedLoan) }}</div>
-        <div class="muted">
-          {{ store.cardNumberOf(selectedLoan) }} · Book ID: {{ store.bookIdOf(selectedLoan) }}
-        </div>
+        <div class="muted">{{ store.cardNumberOf(selectedLoan) }} · Book ID: {{ store.bookIdOf(selectedLoan) }}</div>
       </div>
 
       <a-form layout="vertical">
@@ -95,11 +104,11 @@
         </a-form-item>
       </a-form>
     </a-modal>
-  </a-card>
+  </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useLibrarianStore } from '@/stores/librarian'
@@ -192,20 +201,74 @@ function bookTitle(loan = {}) {
 function fmtDate(d) {
   return d ? dayjs(d).format('DD/MM/YYYY') : '—'
 }
+
+onMounted(() => {
+  if (!store.transactions.length || !store.fines.length) {
+    store.loadAll()
+  }
+})
 </script>
 
 <style scoped>
-.return-toolbar {
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hero-card,
+.panel-card {
+  border-radius: 18px !important;
+  border: 1px solid #edf1ee !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04) !important;
+}
+
+.hero-card :deep(.ant-card-body) {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 20px 22px;
+}
+
+.hero-copy h2 {
+  margin: 6px 0 6px;
+  font-size: 26px;
+  font-weight: 800;
+  color: #103b35;
+}
+
+.hero-copy p {
+  margin: 0;
+  color: #7d8a83;
+}
+
+.eyebrow {
+  color: #1f5f55;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.return-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
 }
+
+.return-search {
+  max-width: 420px;
+  width: 100%;
+}
+
 .reader-avatar {
   background: #e6f7ef;
   color: #047857;
 }
+
 .font-medium { font-weight: 600; }
 .muted {
   color: #94a3b8;
@@ -216,11 +279,24 @@ function fmtDate(d) {
   color: #ef4444;
   font-weight: 700;
 }
+
 .condition-summary {
   padding: 12px 14px;
   margin-bottom: 16px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+@media (max-width: 992px) {
+  .hero-card :deep(.ant-card-body),
+  .return-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .return-search {
+    max-width: none;
+  }
 }
 </style>

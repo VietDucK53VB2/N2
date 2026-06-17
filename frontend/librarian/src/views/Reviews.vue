@@ -1,24 +1,33 @@
 <template>
-  <div>
-    <a-row :gutter="16" class="mb-4">
-      <a-col :span="8">
-        <a-card>
+  <div class="page-shell">
+    <a-row :gutter="[16, 16]" class="stats-row">
+      <a-col :xs="24" :md="8">
+        <a-card class="mini-card">
           <a-statistic title="Tổng nhóm sách" :value="groups.length" />
         </a-card>
       </a-col>
-      <a-col :span="8">
-        <a-card>
+      <a-col :xs="24" :md="8">
+        <a-card class="mini-card">
           <a-statistic title="Tổng lượt đánh giá" :value="totalReviews" />
         </a-card>
       </a-col>
-      <a-col :span="8">
-        <a-card>
+      <a-col :xs="24" :md="8">
+        <a-card class="mini-card">
           <a-statistic title="Điểm trung bình" :value="avgRating" :precision="1" suffix="/5" />
         </a-card>
       </a-col>
     </a-row>
 
-    <a-card title="Đánh giá sách" :body-style="{ padding: 0 }">
+    <a-card class="panel-card">
+      <template #title>
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Đánh giá sách</div>
+            <div class="panel-subtitle">Dữ liệu phản hồi của độc giả theo từng đầu sách</div>
+          </div>
+        </div>
+      </template>
+
       <a-table
         :columns="columns"
         :data-source="groups"
@@ -32,10 +41,10 @@
             <a-rate :value="record.averageRating" disabled allow-half />
             <span class="ml-2">{{ record.averageRating.toFixed(1) }}/5</span>
           </template>
-          <template v-if="column.key === 'reviews'">
+          <template v-else-if="column.key === 'reviews'">
             <a-tag color="blue">{{ record.reviews.length }}</a-tag>
           </template>
-          <template v-if="column.key === 'latest'">
+          <template v-else-if="column.key === 'latest'">
             <div v-if="record.reviews[0]">
               <div class="font-weight-bold">{{ record.reviews[0].comment || record.reviews[0].Comment || 'Không có nhận xét' }}</div>
               <div class="text-secondary">{{ fmtDate(record.reviews[0].createdAt || record.reviews[0].CreatedAt) }}</div>
@@ -107,7 +116,55 @@ onMounted(load)
 </script>
 
 <style scoped>
-.mb-4 { margin-bottom: 16px; }
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stats-row {
+  margin-bottom: 0;
+}
+
+.mini-card,
+.panel-card {
+  border-radius: 18px !important;
+  border: 1px solid #edf1ee !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04) !important;
+}
+
+.mini-card :deep(.ant-card-body) {
+  padding: 18px 20px;
+}
+
+.panel-card :deep(.ant-card-head) {
+  border-bottom: none;
+  padding: 18px 20px 0;
+}
+
+.panel-card :deep(.ant-card-body) {
+  padding: 18px 20px 20px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #103b35;
+  letter-spacing: -0.01em;
+}
+
+.panel-subtitle {
+  font-size: 12px;
+  color: #8c98a5;
+  margin-top: 2px;
+}
+
 .ml-2 { margin-left: 8px; }
 .text-secondary { color: rgba(0,0,0,0.45); font-size: 12px; }
 .font-weight-bold { font-weight: 600; }
