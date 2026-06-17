@@ -281,6 +281,7 @@ function promptRejectReason(defaultReason = '') {
 export const useLibrarianStore = defineStore('librarian', () => {
   const transactions = ref([])
   const fines = ref([])
+  const revenueSummary = ref(null)
   const loading = ref(false)
 
   const pendingTx = computed(() => transactions.value.filter(isPending))
@@ -293,6 +294,14 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const unpaidFines = computed(() => fines.value.filter(f => !(f.IsPaid || f.isPaid)))
   const totalUnpaid = computed(() => unpaidFines.value.reduce((s, f) => s + Number(f.Amount || f.amount || 0), 0))
   const paidFines = computed(() => fines.value.filter(f => f.IsPaid || f.isPaid))
+  const totalRevenue = computed(() => Number(revenueSummary.value?.totalRevenue || 0))
+  const totalBorrowRevenue = computed(() => Number(revenueSummary.value?.totalBorrowRevenue || 0))
+  const totalFineRevenue = computed(() => Number(revenueSummary.value?.totalFineRevenue || 0))
+  const pendingFineAmount = computed(() => Number(revenueSummary.value?.pendingFineAmount || 0))
+  const unpaidFineAmount = computed(() => Number(revenueSummary.value?.unpaidFineAmount || 0))
+  const borrowRevenueCount = computed(() => Number(revenueSummary.value?.borrowRevenueCount || 0))
+  const fineRevenueCount = computed(() => Number(revenueSummary.value?.fineRevenueCount || 0))
+  const recentRevenue = computed(() => Array.isArray(revenueSummary.value?.recentRevenue) ? revenueSummary.value.recentRevenue : [])
 
   async function loadTransactions() {
     loading.value = true
@@ -301,6 +310,12 @@ export const useLibrarianStore = defineStore('librarian', () => {
   }
   async function loadFines() {
     try { const r = await apiFetch(`${CIRC_API}/fines`); if (r.ok) fines.value = await r.json() } catch {}
+  }
+  async function loadRevenueSummary() {
+    try {
+      const r = await apiFetch(`${CIRC_API}/revenue`)
+      if (r.ok) revenueSummary.value = await r.json()
+    } catch {}
   }
   async function approve(id) {
     const r = await apiFetch(`${CIRC_API}/transactions/${id}/approve`, { method: 'POST' })
@@ -349,13 +364,13 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
   async function payFine(id) { const r = await apiFetch(`${CIRC_API}/fines/${id}/pay`, { method: 'POST' }); if (r.ok) await loadFines(); return r }
-  async function loadAll() { await Promise.all([loadTransactions(), loadFines()]) }
+  async function loadAll() { await Promise.all([loadTransactions(), loadFines(), loadRevenueSummary()]) }
 
   return {
-    transactions, fines, loading,
+    transactions, fines, revenueSummary, loading,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
-    unpaidFines, paidFines, totalUnpaid,
+    unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf,
-    loadTransactions, loadFines, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine, promptRejectReason
+    loadTransactions, loadFines, loadRevenueSummary, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine, promptRejectReason
   }
 })

@@ -16,6 +16,8 @@ public sealed class CirculationDbContext : DbContext
 
     public DbSet<PublishedEventLog> PublishedEventLogs => Set<PublishedEventLog>();
 
+    public DbSet<RevenueRecord> RevenueRecords => Set<RevenueRecord>();
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<Book> Books => Set<Book>();
@@ -57,6 +59,19 @@ public sealed class CirculationDbContext : DbContext
             entity.Property(item => item.PayloadJson).IsRequired();
             entity.Property(item => item.SourceService).HasMaxLength(64).IsRequired();
             entity.HasIndex(item => new { item.SourceService, item.EventType, item.PublishedAt });
+        });
+
+        modelBuilder.Entity<RevenueRecord>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.SourceType).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.ReferenceId).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.UserId).HasMaxLength(64);
+            entity.Property(item => item.CardNumber).HasMaxLength(32);
+            entity.Property(item => item.Amount).HasPrecision(18, 2);
+            entity.Property(item => item.Description).HasMaxLength(256).IsRequired();
+            entity.HasIndex(item => new { item.SourceType, item.CreatedAt });
+            entity.HasIndex(item => item.ReferenceId);
         });
 
         modelBuilder.Entity<User>(entity =>

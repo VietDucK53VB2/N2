@@ -45,6 +45,27 @@ public static class CirculationSeeder
             try { await dbContext.Database.ExecuteSqlRawAsync(@"IF COL_LENGTH('dbo.FineCharges', 'PaymentRequestedAt') IS NULL
                 ALTER TABLE [dbo].[FineCharges] ADD [PaymentRequestedAt] datetime2 NULL"); }
             catch { /* ignore */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"IF OBJECT_ID('dbo.RevenueRecords', 'U') IS NULL
+                CREATE TABLE [dbo].[RevenueRecords] (
+                    [Id] uniqueidentifier NOT NULL PRIMARY KEY,
+                    [SourceType] nvarchar(64) NOT NULL,
+                    [ReferenceId] nvarchar(64) NOT NULL,
+                    [UserId] nvarchar(64) NULL,
+                    [CardNumber] nvarchar(32) NULL,
+                    [Amount] decimal(18,2) NOT NULL,
+                    [Description] nvarchar(256) NOT NULL,
+                    [CreatedAt] datetime2 NOT NULL
+                )"); }
+            catch { /* ignore */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RevenueRecords_SourceType_CreatedAt' AND object_id = OBJECT_ID('dbo.RevenueRecords'))
+                CREATE INDEX [IX_RevenueRecords_SourceType_CreatedAt] ON [dbo].[RevenueRecords]([SourceType], [CreatedAt])"); }
+            catch { /* ignore */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RevenueRecords_ReferenceId' AND object_id = OBJECT_ID('dbo.RevenueRecords'))
+                CREATE INDEX [IX_RevenueRecords_ReferenceId] ON [dbo].[RevenueRecords]([ReferenceId])"); }
+            catch { /* ignore */ }
         }
         else if (dbContext.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
         {
@@ -79,6 +100,24 @@ public static class CirculationSeeder
 
             try { await dbContext.Database.ExecuteSqlRawAsync(@"ALTER TABLE FineCharges ADD COLUMN PaymentRequestedAt TEXT NULL"); }
             catch { /* ignore when the column already exists */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"CREATE TABLE IF NOT EXISTS RevenueRecords (
+                Id TEXT NOT NULL PRIMARY KEY,
+                SourceType TEXT NOT NULL,
+                ReferenceId TEXT NOT NULL,
+                UserId TEXT NULL,
+                CardNumber TEXT NULL,
+                Amount REAL NOT NULL,
+                Description TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL
+            )"); }
+            catch { /* ignore when the table already exists */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS IX_RevenueRecords_SourceType_CreatedAt ON RevenueRecords(SourceType, CreatedAt)"); }
+            catch { /* ignore when the index already exists */ }
+
+            try { await dbContext.Database.ExecuteSqlRawAsync(@"CREATE INDEX IF NOT EXISTS IX_RevenueRecords_ReferenceId ON RevenueRecords(ReferenceId)"); }
+            catch { /* ignore when the index already exists */ }
         }
     }
 

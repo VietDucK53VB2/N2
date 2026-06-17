@@ -18,6 +18,7 @@ namespace N2.Circulation.Api.Controllers;
 public sealed class CirculationController : ControllerBase
 {
     private const decimal DailyFineRate = 5000m;
+    private const decimal DailyBorrowRate = 5000m;
     private const int DefaultBorrowDays = 14;
     private const int DefaultMonthlyBorrowLimit = 5;
     private const string BorrowPolicyEventType = "BorrowPolicyUpdated";
@@ -851,6 +852,10 @@ public sealed class CirculationController : ControllerBase
             .AsNoTracking()
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
+        var totalRevenue = await _dbContext.RevenueRecords
+            .AsNoTracking()
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
         var unpaidFines = await _dbContext.FineCharges
             .AsNoTracking()
             .Where(item => item.PaidAt == null)
@@ -915,6 +920,7 @@ public sealed class CirculationController : ControllerBase
             activeBorrows,
             overdueBorrows,
             totalFines,
+            totalRevenue,
             unpaidFines,
             topBorrowedBooks,
             borrowingTrends,
@@ -1075,6 +1081,7 @@ public sealed class CirculationController : ControllerBase
         var totalOverdue = await _dbContext.BorrowTransactions
             .CountAsync(b => b.ReturnedAt == null && b.Status != "Pending" && b.DueAt < now, cancellationToken);
         var totalFines = await _dbContext.FineCharges.SumAsync(f => f.Amount, cancellationToken);
+        var totalRevenue = await _dbContext.RevenueRecords.SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
         var totalUsers = await _dbContext.Users.CountAsync(cancellationToken);
 
         return Ok(new
@@ -1084,7 +1091,62 @@ public sealed class CirculationController : ControllerBase
             totalBorrowed,
             totalOverdue,
             totalFines,
+            totalRevenue,
             totalUsers
+        });
+    }
+
+    [HttpGet("revenue")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> GetRevenueAsync(CancellationToken cancellationToken)
+    {
+        var totalBorrowRevenue = await _dbContext.RevenueRecords
+            .AsNoTracking()
+            .Where(item => item.SourceType == "BorrowApproval")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var totalFineRevenue = await _dbContext.RevenueRecords
+            .AsNoTracking()
+            .Where(item => item.SourceType == "FinePayment")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var pendingFineAmount = await _dbContext.FineCharges
+            .AsNoTracking()
+            .Where(item => item.PaymentStatus == "PendingApproval" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var unpaidFineAmount = await _dbContext.FineCharges
+            .AsNoTracking()
+            .Where(item => item.PaymentStatus == "Unpaid" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var recentRevenue = await _dbContext.RevenueRecords
+            .AsNoTracking()
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(20)
+            .Select(item => new
+            {
+                item.Id,
+                item.SourceType,
+                item.ReferenceId,
+                item.UserId,
+                item.CardNumber,
+                item.Amount,
+                item.Description,
+                item.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(new
+        {
+            totalRevenue = totalBorrowRevenue + totalFineRevenue,
+            totalBorrowRevenue,
+            totalFineRevenue,
+            pendingFineAmount,
+            unpaidFineAmount,
+            borrowRevenueCount = await _dbContext.RevenueRecords.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
+            fineRevenueCount = await _dbContext.RevenueRecords.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
+            recentRevenue
         });
     }
 
@@ -1174,6 +1236,17 @@ public sealed class CirculationController : ControllerBase
 
         fine.PaymentStatus = "Paid";
         fine.PaidAt = DateTime.UtcNow;
+        _dbContext.RevenueRecords.Add(new RevenueRecord
+        {
+            Id = Guid.NewGuid(),
+            SourceType = "FinePayment",
+            ReferenceId = fine.Id.ToString(),
+            UserId = fine.UserId,
+            CardNumber = fine.CardNumber,
+            Amount = fine.Amount,
+            Description = fine.Reason,
+            CreatedAt = fine.PaidAt.Value
+        });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new { Message = "Fine payment approved.", FineId = id });
@@ -1384,11 +1457,24 @@ public sealed class CirculationController : ControllerBase
         var requestedBorrowedAt = NormalizeUtc(transaction.BorrowedAt);
         var requestedDueAt = NormalizeUtc(transaction.DueAt);
         var requestedDuration = requestedDueAt - requestedBorrowedAt;
+        var borrowDays = Math.Max(1, (int)Math.Ceiling(requestedDuration.TotalDays));
+        var borrowRevenue = borrowDays * DailyBorrowRate;
         transaction.Status = "Borrowed";
         transaction.BorrowedAt = approvedAt;
         transaction.DueAt = requestedDuration > TimeSpan.Zero
             ? approvedAt.Add(requestedDuration)
             : approvedAt.AddDays(DefaultBorrowDays);
+        _dbContext.RevenueRecords.Add(new RevenueRecord
+        {
+            Id = Guid.NewGuid(),
+            SourceType = "BorrowApproval",
+            ReferenceId = transaction.Id.ToString(),
+            UserId = transaction.UserId,
+            CardNumber = transaction.CardNumber,
+            Amount = borrowRevenue,
+            Description = $"Thu mượn {borrowDays} ngày",
+            CreatedAt = approvedAt
+        });
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.approved", new { TransactionId = id, ApprovedAt = new DateTimeOffset(approvedAt, TimeSpan.Zero) }));
         _dbContext.PublishedEventLogs.Add(CreateEventLog("book.borrowed", new BookBorrowedEvent
         {
