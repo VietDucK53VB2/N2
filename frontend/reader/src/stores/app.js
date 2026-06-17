@@ -398,10 +398,6 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function loadFines() {
-    if (!isStaffRole()) {
-      fines.value = []
-      return []
-    }
     fines.value = await fetchFines()
     return fines.value
   }
@@ -478,7 +474,7 @@ export const useAppStore = defineStore('app', () => {
       } else {
         allTransactions.value = []
         events.value = []
-        fines.value = []
+        await loadFines()
       }
     } finally {
       loading.value = false
