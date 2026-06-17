@@ -234,7 +234,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { titleColor, formatDateTime, formatMoney, getDisplayBookTitle, translateFineReason } from '@/utils/helpers'
+import { titleColor, formatDateTime, formatMoney, translateFineReason } from '@/utils/helpers'
 
 const store = useAppStore()
 const loading = ref(false)
@@ -264,11 +264,36 @@ const paymentHeaders = [
 ]
 
 const bookMap = computed(() => {
-  return new Map((store.books || []).map(book => [String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? ''), book]))
+  return new Map((store.books || []).map(book => [String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? '').trim(), book]))
 })
 
 function resolveBook(bookId) {
-  return bookMap.value.get(String(bookId)) || {}
+  const key = String(bookId || '').trim()
+  if (!key) return {}
+  return bookMap.value.get(key) || [...bookMap.value.values()].find(book => String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? '').trim() === key) || {}
+}
+
+function bookTitleOf(tx = {}, fallbackIndex = 0) {
+  const book = resolveBook(tx.BookId || tx.bookId)
+  return (
+    tx.TenSach ||
+    tx.tenSach ||
+    tx.Title ||
+    tx.title ||
+    tx.bookTitle ||
+    tx.BookTitle ||
+    tx.BookName ||
+    tx.bookName ||
+    tx.book?.TenSach ||
+    tx.book?.tenSach ||
+    tx.catalogBook?.TenSach ||
+    tx.catalogBook?.tenSach ||
+    book.tenSach ||
+    book.TenSach ||
+    book.title ||
+    book.Title ||
+    `Sách #${String(tx.BookId || tx.bookId || fallbackIndex + 1)}`
+  )
 }
 
 function safeDate(value) {
@@ -303,15 +328,8 @@ function getBorrowRecords() {
     const returnedAt = tx.ReturnedAt || tx.returnedAt
     const amount = estimateBorrowAmount(tx)
     const status = borrowStatus(tx)
-    const bookTitle = getDisplayBookTitle(
-      {
-        tenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || tx.bookTitle || tx.BookTitle || book.tenSach || book.TenSach,
-        TenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || tx.bookTitle || tx.BookTitle || book.tenSach || book.TenSach,
-        title: tx.Title || tx.title || tx.TenSach || tx.tenSach || book.tenSach || book.TenSach
-      },
-      `Sách #${String(tx.BookId || tx.bookId || index + 1)}`
-    )
-    const author = tx.TacGia || tx.tacGia || book.tacGia || book.TacGia || ''
+    const bookTitle = bookTitleOf(tx, index)
+    const author = tx.TacGia || tx.tacGia || tx.author || tx.Author || book.tacGia || book.TacGia || book.author || book.Author || ''
 
     return {
       id: `borrow-${tx.Id || tx.id || index}`,
@@ -319,6 +337,7 @@ function getBorrowRecords() {
       title: 'Thu mượn',
       typeLabel: 'Thu mượn',
       typeColor: 'success',
+      bookTitle,
       reference: `Phiếu #${String(tx.Id || tx.id || index + 1).slice(0, 8)}`,
       subject: author ? `${bookTitle} - ${author}` : bookTitle,
       description: returnedAt ? 'Phiếu đã hoàn tất và đã trả sách.' : 'Phiếu mượn đang được theo dõi trong lịch sử.',

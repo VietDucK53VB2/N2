@@ -274,6 +274,40 @@ export const useAppStore = defineStore('app', () => {
     return record.BookId || record.bookId || ''
   }
 
+  function normalizeBookId(value = '') {
+    return String(value || '').trim()
+  }
+
+  function bookTitleOf(record = {}) {
+    const bookId = normalizeBookId(bookIdOf(record))
+    const match = books.value.find(book => {
+      const candidateId = normalizeBookId(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? '')
+      return candidateId && candidateId === bookId
+    })
+
+    return (
+      record.TenSach ||
+      record.tenSach ||
+      record.Title ||
+      record.title ||
+      record.BookTitle ||
+      record.bookTitle ||
+      record.BookName ||
+      record.bookName ||
+      record.book?.TenSach ||
+      record.book?.tenSach ||
+      record.book?.Title ||
+      record.book?.title ||
+      record.catalogBook?.TenSach ||
+      record.catalogBook?.tenSach ||
+      match?.tenSach ||
+      match?.TenSach ||
+      match?.title ||
+      match?.Title ||
+      (bookId ? `Book #${bookId}` : '—')
+    )
+  }
+
   const activeTransactions = computed(() =>
     myTransactions.value.filter(isActiveLoan)
   )
@@ -381,6 +415,8 @@ export const useAppStore = defineStore('app', () => {
         return {
           ...tx,
           TenSach: tx.TenSach || tx.tenSach || tx.Title || tx.title || bk.tenSach,
+          Title: tx.Title || tx.title || tx.TenSach || tx.tenSach || bk.tenSach,
+          BookTitle: tx.BookTitle || tx.bookTitle || tx.TenSach || tx.tenSach || bk.tenSach,
           TacGia: tx.TacGia || tx.tacGia || bk.tacGia,
           ImageUrl: tx.ImageUrl || tx.imageUrl || bk.imageUrl,
           Isbn: tx.Isbn || tx.isbn || bk.isbn,
@@ -518,6 +554,7 @@ export const useAppStore = defineStore('app', () => {
     addToCart, removeFromCart, clearCart,
     isFavorite, toggleFavorite, removeFavorite,
     loadFavoritesFromServer,
-    loadUserInfo, loadAll
+    loadUserInfo, loadAll,
+    bookTitleOf
   }
 })

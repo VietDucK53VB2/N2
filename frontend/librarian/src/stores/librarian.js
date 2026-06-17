@@ -224,6 +224,10 @@ function bookIdOf(transaction = {}) {
   return transaction.BookId || transaction.bookId || ''
 }
 
+function normalizeBookId(value = '') {
+  return String(value || '').trim()
+}
+
 function normalizeBook(book = {}) {
   return {
     id: String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? ''),
@@ -458,8 +462,8 @@ export const useLibrarianStore = defineStore('librarian', () => {
   async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary()]) }
 
   function bookTitleOf(record = {}) {
-    const bookId = String(bookIdOf(record))
-    const match = bookMap.value.get(bookId)
+    const bookId = normalizeBookId(bookIdOf(record))
+    const match = bookMap.value.get(bookId) || [...bookMap.value.values()].find(item => normalizeBookId(item.id) === bookId)
     return (
       record.TenSach ||
       record.tenSach ||
@@ -469,7 +473,16 @@ export const useLibrarianStore = defineStore('librarian', () => {
       record.bookTitle ||
       record.BookName ||
       record.bookName ||
+      record.book?.TenSach ||
+      record.book?.tenSach ||
+      record.book?.Title ||
+      record.book?.title ||
+      record.catalogBook?.TenSach ||
+      record.catalogBook?.tenSach ||
       match?.tenSach ||
+      match?.TenSach ||
+      match?.title ||
+      match?.Title ||
       (bookId ? `Book #${bookId}` : '—')
     )
   }
