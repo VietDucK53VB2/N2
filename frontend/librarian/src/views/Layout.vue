@@ -133,7 +133,8 @@ const sessionUserInfo = ref(readSessionUserInfo())
 
 function readStoredUserInfo() {
   try {
-    return JSON.parse(localStorage.getItem('userInfo') || '{}')
+    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
   } catch {
     return {}
   }

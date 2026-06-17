@@ -113,6 +113,15 @@ function extractCardNumberFromPayload(payload = {}, fallback = '') {
   )
 }
 
+function getCachedUserInfo() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 function clearAuth() {
   localStorage.removeItem('authToken')
   localStorage.removeItem('token')
@@ -136,7 +145,7 @@ function storeAuthToken(token, cardNumber = '') {
   localStorage.setItem('token', token)
   if (normalizedCardNumber) localStorage.setItem('readerCard', normalizedCardNumber)
   if (role) localStorage.setItem('role', role)
-  const cached = JSON.parse(localStorage.getItem('userInfo') || '{}')
+  const cached = getCachedUserInfo()
   localStorage.setItem('userInfo', JSON.stringify({
     ...cached,
     fullName: extractDisplayNameFromPayload(cached, username || normalizedCardNumber),

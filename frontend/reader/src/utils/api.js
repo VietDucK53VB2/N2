@@ -22,7 +22,10 @@ export function getReaderCard() {
 }
 
 export function getCachedUserInfo() {
-  try { return JSON.parse(localStorage.getItem('userInfo') || '{}') }
+  try {
+    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  }
   catch { return {} }
 }
 
