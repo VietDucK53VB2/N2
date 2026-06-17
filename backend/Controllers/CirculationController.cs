@@ -474,7 +474,9 @@ public sealed class CirculationController : ControllerBase
                 UserId = transaction.UserId ?? string.Empty,
                 CardNumber = transaction.CardNumber,
                 Amount = fineAmount,
-                Reason = $"Overdue return by {overdueDays} day(s)",
+                Reason = overdueDays > 0
+                    ? $"Phạt trả quá hạn {overdueDays} ngày"
+                    : "Phạt trả quá hạn",
                 CreatedAt = returnedAt,
                 PaymentStatus = "Unpaid",
                 PaidAt = null
@@ -1173,12 +1175,126 @@ public sealed class CirculationController : ControllerBase
 
         var fines = await finesQuery
             .OrderByDescending(f => f.CreatedAt)
-            .Select(f => new
+            .ToListAsync(cancellationToken);
+
+        var transactionIds = fines
+            .Select(f => f.BorrowTransactionId)
+            .Distinct()
+            .ToList();
+
+        var relatedTransactions = transactionIds.Count == 0
+            ? new List<BorrowTransaction>()
+            : await _dbContext.BorrowTransactions
+                .AsNoTracking()
+                .Where(t => transactionIds.Contains(t.Id))
+                .Select(t => new BorrowTransaction
+                {
+                    Id = t.Id,
+                    BookId = t.BookId,
+                    Isbn = t.Isbn,
+                    UserId = t.UserId,
+                    CardNumber = t.CardNumber,
+                    ReaderName = t.ReaderName,
+                    ReaderUsername = t.ReaderUsername
+                })
+                .ToListAsync(cancellationToken);
+
+        var bookIds = relatedTransactions
+            .Select(t => t.BookId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct()
+            .ToList();
+        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
+
+        var cardNumbers = fines
+            .Select(f => f.CardNumber)
+            .Concat(relatedTransactions.Select(t => t.CardNumber))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userRefs = fines
+            .Select(f => f.UserId)
+            .Concat(relatedTransactions.Select(t => t.UserId))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userGuidRefs = userRefs
+            .Where(value => Guid.TryParse(value, out _))
+            .Select(value => Guid.Parse(value!))
+            .Distinct()
+            .ToList();
+
+        var transactionUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
+                userGuidRefs.Contains(user.Id) ||
+                userRefs.Contains(user.Username))
+            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
+            .ToListAsync(cancellationToken);
+
+        var usersByCard = transactionUsers
+            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
+            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
+        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
+
+        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(
+            cardNumbers.Where(value => !usersByCard.ContainsKey(value)).ToList(),
+            cancellationToken);
+
+        var result = fines.Select(f =>
+        {
+            var transaction = relatedTransactions.FirstOrDefault(t => t.Id == f.BorrowTransactionId);
+            books.TryGetValue(transaction?.BookId ?? string.Empty, out var book);
+
+            var readerName = transaction?.ReaderName ?? "";
+            var readerUsername = transaction?.ReaderUsername ?? "";
+            var lookupCard = transaction?.CardNumber ?? f.CardNumber;
+
+            if (!string.IsNullOrWhiteSpace(lookupCard) && usersByCard.TryGetValue(lookupCard, out var byCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byCard.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersById.TryGetValue(f.UserId, out var byId))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byId.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersByUsername.TryGetValue(f.UserId, out var byUsername))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byUsername.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(lookupCard) && identityUsersByCard.TryGetValue(lookupCard, out var byIdentityCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byIdentityCard.Username;
+            }
+
+            return new
             {
                 f.Id,
                 f.BorrowTransactionId,
                 f.UserId,
                 f.CardNumber,
+                ReaderName = string.IsNullOrWhiteSpace(readerName) ? f.CardNumber ?? f.UserId ?? "" : readerName,
+                ReaderUsername = readerUsername,
+                BookId = transaction?.BookId ?? "",
+                TenSach = book?.TenSach ?? "",
+                TacGia = book?.TacGia ?? "",
                 f.Amount,
                 f.Reason,
                 f.CreatedAt,
@@ -1187,10 +1303,10 @@ public sealed class CirculationController : ControllerBase
                 f.PaidAt,
                 IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
                 IsPaymentPending = f.PaymentStatus == "PendingApproval"
-            })
-            .ToListAsync(cancellationToken);
+            };
+        }).ToList();
 
-        return Ok(fines);
+        return Ok(result);
     }
 
     [HttpPost("fines/{id}/request-payment")]
@@ -1250,6 +1366,53 @@ public sealed class CirculationController : ControllerBase
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return Ok(new { Message = "Fine payment approved.", FineId = id });
+    }
+
+    [HttpPost("fines/{id}/reject-payment")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> RejectFinePaymentAsync(
+        Guid id,
+        [FromBody] TransactionRejectRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var fine = await _dbContext.FineCharges.FindAsync(new object[] { id }, cancellationToken);
+        if (fine is null)
+            return NotFound(new { Message = "Fine not found." });
+
+        if (!string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Only pending fine payments can be rejected." });
+        }
+
+        var reason = string.IsNullOrWhiteSpace(request?.Reason)
+            ? "Không đủ điều kiện duyệt thanh toán phí phạt"
+            : request!.Reason!.Trim();
+        var rejectedAt = DateTimeOffset.UtcNow;
+
+        fine.PaymentStatus = "Unpaid";
+        fine.PaymentRequestedAt = null;
+
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("fine.payment.rejected", new
+        {
+            FineId = id,
+            Reason = reason,
+            RejectedAt = rejectedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            FineId = id,
+            fine.BorrowTransactionId,
+            fine.CardNumber,
+            Type = "fine-payment-rejected",
+            Title = "Từ chối duyệt phí phạt",
+            Message = $"Yêu cầu thanh toán phí phạt bị từ chối. Lý do: {reason}.",
+            VisibleToReader = true,
+            CreatedAt = rejectedAt
+        }));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Fine payment rejected.", FineId = id, Reason = reason });
     }
 
     [HttpPost("books/{bookId}/reviews")]

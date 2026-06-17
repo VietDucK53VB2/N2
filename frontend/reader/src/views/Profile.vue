@@ -1,8 +1,8 @@
-<template>
+﻿<template>
   <div>
     <div class="mb-6">
-      <h2 class="text-h5 font-weight-black">Hồ sơ cá nhân</h2>
-      <p class="text-body-2 text-grey">Thông tin tài khoản và thống kê</p>
+      <h2 class="text-h5 font-weight-black">Há»“ sÆ¡ cÃ¡ nhÃ¢n</h2>
+      <p class="text-body-2 text-grey">ThÃ´ng tin tÃ i khoáº£n vÃ  thá»‘ng kÃª</p>
     </div>
 
     <v-row>
@@ -16,7 +16,7 @@
             </v-avatar>
             <button class="avatar-upload-btn" type="button" @click="pickAvatar">
               <v-icon size="18">mdi-camera</v-icon>
-              Đổi ảnh
+              Äá»•i áº£nh
             </button>
             <input ref="avatarInput" class="d-none" type="file" accept="image/*" @change="onAvatarPicked" />
           </div>
@@ -27,13 +27,13 @@
                 <p class="text-body-2 text-grey">{{ roleName }}</p>
               </div>
               <v-btn class="btn-gradient" prepend-icon="mdi-pencil" @click="openEditDialog">
-                Chỉnh sửa
+                Chá»‰nh sá»­a
               </v-btn>
             </div>
             <v-row dense>
               <v-col cols="6" md="3">
                 <div class="info-box">
-                  <span class="info-label">Mã thẻ thư viện</span>
+                  <span class="info-label">MÃ£ tháº» thÆ° viá»‡n</span>
                   <span class="info-value text-primary font-weight-bold">
                     {{ displayCardNumber }}
                     <v-icon
@@ -50,12 +50,12 @@
               <v-col cols="6" md="3">
                 <div class="info-box">
                   <span class="info-label">EMAIL</span>
-                  <span class="info-value">{{ userInfo.email || '—' }}</span>
+                  <span class="info-value">{{ userInfo.email || 'â€”' }}</span>
                 </div>
               </v-col>
               <v-col cols="6" md="3">
                 <div class="info-box">
-                  <span class="info-label">NGÀY THAM GIA</span>
+                  <span class="info-label">NGÃ€Y THAM GIA</span>
                   <span class="info-value">{{ formatDate(userInfo.createdAt) }}</span>
                 </div>
               </v-col>
@@ -79,21 +79,21 @@
         <v-card rounded="xl" elevation="1" class="mb-4">
           <v-card-title class="d-flex align-center ga-2">
             <v-icon color="primary">mdi-wallet</v-icon>
-            Phí phạt
+            PhÃ­ pháº¡t
             <v-spacer />
-            <v-chip v-if="store.totalUnpaidFines > 0" color="error" size="small">Cần thanh toán</v-chip>
+            <v-chip v-if="store.totalUnpaidFines > 0" color="error" size="small">Cáº§n thanh toÃ¡n</v-chip>
           </v-card-title>
           <v-card-text>
             <div class="fines-total mb-4">
-              <p class="text-caption font-weight-bold" style="color:#e05a2b">Tổng cần thanh toán</p>
+              <p class="text-caption font-weight-bold" style="color:#e05a2b">Tá»•ng cáº§n thanh toÃ¡n</p>
               <p class="text-h4 font-weight-black text-error">{{ formatMoney(store.totalUnpaidFines) }}</p>
             </div>
 
             <div v-if="store.myUnpaidFines.length" class="mb-4">
-              <p class="text-caption font-weight-bold text-grey mb-2">Chưa thanh toán</p>
+              <p class="text-caption font-weight-bold text-grey mb-2">ChÆ°a thanh toÃ¡n</p>
               <v-list density="compact">
                 <v-list-item v-for="(fine, i) in store.myUnpaidFines" :key="`unpaid-${i}`">
-                  <v-list-item-title class="text-body-2">{{ fine.Reason || fine.reason || 'Phạt quá hạn' }}</v-list-item-title>
+                  <v-list-item-title class="text-body-2">{{ translateFineReason(fine.Reason || fine.reason || '') }}</v-list-item-title>
                   <v-list-item-subtitle>{{ formatDate(fine.CreatedAt || fine.createdAt) }}</v-list-item-subtitle>
                   <template #append>
                     <span class="text-error font-weight-bold">{{ formatMoney(fine.Amount || fine.amount || 0) }}</span>
@@ -103,15 +103,15 @@
             </div>
 
             <div v-if="store.myPendingFinePayments.length" class="mb-4">
-              <p class="text-caption font-weight-bold text-grey mb-2">Đang chờ thủ thư duyệt</p>
+              <p class="text-caption font-weight-bold text-grey mb-2">Äang chá» thá»§ thÆ° duyá»‡t</p>
               <v-list density="compact">
                 <v-list-item v-for="(fine, i) in store.myPendingFinePayments" :key="`pending-${i}`">
-                  <v-list-item-title class="text-body-2">{{ fine.Reason || fine.reason || 'Phạt quá hạn' }}</v-list-item-title>
+                  <v-list-item-title class="text-body-2">{{ translateFineReason(fine.Reason || fine.reason || '') }}</v-list-item-title>
                   <v-list-item-subtitle>
                     {{ formatDate(fine.PaymentRequestedAt || fine.paymentRequestedAt || fine.CreatedAt || fine.createdAt) }}
                   </v-list-item-subtitle>
                   <template #append>
-                    <v-chip size="small" color="warning" variant="flat">Chờ duyệt</v-chip>
+                    <v-chip size="small" color="warning" variant="flat">Chá» duyá»‡t</v-chip>
                   </template>
                 </v-list-item>
               </v-list>
@@ -126,10 +126,10 @@
               :disabled="!store.myUnpaidFines.length"
               @click="payAllFines"
             >
-              Thanh toán ngay
+              Thanh toÃ¡n ngay
             </v-btn>
             <p class="text-caption text-grey text-center mt-3">
-              Thanh toán trước ngày 15 hàng tháng để tránh bị khóa thẻ.
+              Thanh toÃ¡n trÆ°á»›c ngÃ y 15 hÃ ng thÃ¡ng Ä‘á»ƒ trÃ¡nh bá»‹ khÃ³a tháº».
             </p>
           </v-card-text>
         </v-card>
@@ -140,15 +140,15 @@
     <!-- Edit Dialog -->
     <v-dialog v-model="editDialog" max-width="500">
       <v-card rounded="xl">
-        <v-card-title class="font-weight-bold">Chỉnh sửa hồ sơ</v-card-title>
+        <v-card-title class="font-weight-bold">Chá»‰nh sá»­a há»“ sÆ¡</v-card-title>
         <v-card-text>
-          <v-text-field v-model="editForm.fullName" label="Họ và tên" class="mb-3" />
+          <v-text-field v-model="editForm.fullName" label="Há» vÃ  tÃªn" class="mb-3" />
           <v-text-field v-model="editForm.email" label="Email" class="mb-3" />
         </v-card-text>
         <v-card-actions class="pa-4">
           <v-spacer />
-          <v-btn variant="text" @click="editDialog = false">Hủy</v-btn>
-          <v-btn class="btn-gradient" @click="saveProfile">Lưu thay đổi</v-btn>
+          <v-btn variant="text" @click="editDialog = false">Há»§y</v-btn>
+          <v-btn class="btn-gradient" @click="saveProfile">LÆ°u thay Ä‘á»•i</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -163,7 +163,7 @@
 import { ref, computed, reactive } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { requestFinePayment } from '@/utils/api'
-import { getInitials, getDisplayCardNumber, formatDate, formatMoney } from '@/utils/helpers'
+import { getInitials, getDisplayCardNumber, formatDate, formatMoney, translateFineReason } from '@/utils/helpers'
 
 const store = useAppStore()
 const editDialog = ref(false)
@@ -179,9 +179,9 @@ const avatarUrl = computed(() => userInfo.value.avatarUrl || userInfo.value.Avat
 const displayCardNumber = computed(() => getDisplayCardNumber(userInfo.value))
 const roleName = computed(() => {
   const role = userInfo.value.role
-  if (role === 'Admin') return 'Quản trị viên'
-  if (role === 'Librarian') return 'Thủ thư'
-  return 'Thành viên'
+  if (role === 'Admin') return 'Quáº£n trá»‹ viÃªn'
+  if (role === 'Librarian') return 'Thá»§ thÆ°'
+  return 'ThÃ nh viÃªn'
 })
 
 const onTimeCount = computed(() =>
@@ -193,10 +193,10 @@ const onTimeCount = computed(() =>
 )
 
 const stats = computed(() => [
-  { label: 'Đang mượn', value: store.activeTransactions.length, color: 'text-primary' },
-  { label: 'Tổng mượn', value: store.myTransactions.length, color: '' },
-  { label: 'Đúng hạn', value: onTimeCount.value, color: 'text-success' },
-  { label: 'Quá hạn', value: store.overdueTransactions.length, color: 'text-error' }
+  { label: 'Äang mÆ°á»£n', value: store.activeTransactions.length, color: 'text-primary' },
+  { label: 'Tá»•ng mÆ°á»£n', value: store.myTransactions.length, color: '' },
+  { label: 'ÄÃºng háº¡n', value: onTimeCount.value, color: 'text-success' },
+  { label: 'QuÃ¡ háº¡n', value: store.overdueTransactions.length, color: 'text-error' }
 ])
 
 const editForm = reactive({ fullName: '', email: '' })
@@ -229,7 +229,7 @@ function onAvatarPicked(event) {
     }
     localStorage.setItem('userInfo', JSON.stringify(next))
     store.userInfo = next
-    showMessage('Đã cập nhật ảnh đại diện.')
+    showMessage('ÄÃ£ cáº­p nháº­t áº£nh Ä‘áº¡i diá»‡n.')
   }
   reader.readAsDataURL(file)
 }
@@ -243,7 +243,7 @@ function saveProfile() {
   localStorage.setItem('userInfo', JSON.stringify(next))
   store.userInfo = next
   editDialog.value = false
-  showMessage('Đã lưu thông tin hồ sơ.')
+  showMessage('ÄÃ£ lÆ°u thÃ´ng tin há»“ sÆ¡.')
   store.loadAll()
 }
 
@@ -257,14 +257,14 @@ async function payAllFines() {
       const response = await requestFinePayment(id)
       if (!response.ok) {
         const data = await response.json().catch(() => null)
-        showMessage(data?.message || data?.Message || 'Không gửi được yêu cầu thanh toán.', 'error')
+        showMessage(data?.message || data?.Message || 'KhÃ´ng gá»­i Ä‘Æ°á»£c yÃªu cáº§u thanh toÃ¡n.', 'error')
         return
       }
     }
     await store.loadAll()
-    showMessage('Đã gửi yêu cầu thanh toán. Chờ thủ thư duyệt.')
+    showMessage('ÄÃ£ gá»­i yÃªu cáº§u thanh toÃ¡n. Chá» thá»§ thÆ° duyá»‡t.')
   } catch {
-    showMessage('Không kết nối được máy chủ. Vui lòng thử lại.', 'error')
+    showMessage('KhÃ´ng káº¿t ná»‘i Ä‘Æ°á»£c mÃ¡y chá»§. Vui lÃ²ng thá»­ láº¡i.', 'error')
   } finally {
     paying.value = false
   }
@@ -272,7 +272,7 @@ async function payAllFines() {
 
 function copyCard() {
   navigator.clipboard?.writeText(displayCardNumber.value || '')
-  showMessage('Đã sao chép mã thẻ.')
+  showMessage('ÄÃ£ sao chÃ©p mÃ£ tháº».')
 }
 </script>
 
@@ -357,3 +357,4 @@ function copyCard() {
   background: linear-gradient(135deg, #064e3b 0%, #065f46 45%, #047857 100%) !important;
 }
 </style>
+

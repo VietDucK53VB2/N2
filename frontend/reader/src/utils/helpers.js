@@ -80,6 +80,38 @@ export function getDisplayName(user = {}, fallback = 'Độc giả') {
   ) || fallback
 }
 
+export function getDisplayReaderName(record = {}, fallback = 'Độc giả') {
+  return firstNonEmpty(
+    record.readerName,
+    record.ReaderName,
+    record.fullName,
+    record.FullName,
+    record.readerFullName,
+    record.ReaderFullName,
+    record.username,
+    record.Username,
+    record.readerUsername,
+    record.ReaderUsername,
+    record.cardNumber,
+    record.CardNumber,
+    fallback
+  ) || fallback
+}
+
+export function getDisplayBookTitle(book = {}, fallback = '—') {
+  return firstNonEmpty(
+    book.tenSach,
+    book.TenSach,
+    book.title,
+    book.Title,
+    book.bookTitle,
+    book.BookTitle,
+    book.bookName,
+    book.BookName,
+    fallback
+  ) || fallback
+}
+
 export function getDisplayCardNumber(user = {}, fallback = 'Chưa liên kết') {
   return firstNonEmpty(
     user.cardNumber,
@@ -94,6 +126,25 @@ export function getDisplayCardNumber(user = {}, fallback = 'Chưa liên kết') 
     user.user?.CardNumber,
     fallback
   ) || fallback
+}
+
+export function translateFineReason(reason = '') {
+  const text = String(reason || '').trim()
+  if (!text) return 'Phạt trả quá hạn'
+
+  const lower = text.toLowerCase()
+  const overdueMatch = lower.match(/overdue return by\s+(\d+)\s+day/)
+  if (overdueMatch) {
+    const days = overdueMatch[1]
+    return `Phạt trả quá hạn ${days} ngày`
+  }
+
+  if (lower.includes('lost book fee')) return 'Phí mất sách'
+  if (lower.includes('heavydamage')) return 'Phí hư hỏng nặng'
+  if (lower.includes('lightdamage')) return 'Phí hư hỏng nhẹ'
+  if (lower.includes('damage')) return 'Phí hư hỏng sách'
+
+  return text
 }
 
 export function getGenreTags(tenSach) {

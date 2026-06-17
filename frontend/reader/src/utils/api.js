@@ -393,6 +393,14 @@ export async function approveFinePayment(fineId) {
   return authFetchWithFallback(`/fines/${fineId}/pay`, { method: 'POST' })
 }
 
+export async function rejectFinePayment(fineId, reason = '') {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/fines/${fineId}/reject-payment`, {
+    method: 'POST',
+    body: JSON.stringify({ Reason: reason, reason })
+  })
+}
+
 export async function reviewBook(bookId, { cardNumber, userId, rating, comment = '' }) {
   if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/books/${encodeURIComponent(bookId)}/reviews`, {
