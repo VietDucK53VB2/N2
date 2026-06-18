@@ -1431,73 +1431,20 @@ public sealed class CirculationController : ControllerBase
         [FromQuery] DateTime? to,
         [FromQuery] int take = 20)
     {
-        var takeCount = Math.Clamp(take, 1, 200);
+        return Ok(await BuildRevenueSummaryAsync(period, date, from, to, take, cancellationToken));
+    }
 
-        var hasWindow = TryBuildRevenueWindow(period, date, from, to, out var windowStart, out var windowEnd);
-        var revenueRecordsQuery = _dbContext.RevenueRecords
-            .AsNoTracking()
-            .AsQueryable();
-
-        if (hasWindow)
-        {
-            revenueRecordsQuery = revenueRecordsQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
-        }
-
-        var totalBorrowRevenue = await revenueRecordsQuery
-            .AsNoTracking()
-            .Where(item => item.SourceType == "BorrowApproval")
-            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-
-        var totalFineRevenue = await revenueRecordsQuery
-            .AsNoTracking()
-            .Where(item => item.SourceType == "FinePayment")
-            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-
-        var finesQuery = _dbContext.FineCharges
-            .AsNoTracking()
-            .AsQueryable();
-
-        if (hasWindow)
-        {
-            finesQuery = finesQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
-        }
-
-        var pendingFineAmount = await finesQuery
-            .Where(item => item.PaymentStatus == "PendingApproval" && item.PaidAt == null)
-            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-
-        var unpaidFineAmount = await finesQuery
-            .Where(item => item.PaymentStatus == "Unpaid" && item.PaidAt == null)
-            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-
-        var recentRevenue = await revenueRecordsQuery
-            .AsNoTracking()
-            .OrderByDescending(item => item.CreatedAt)
-            .Take(takeCount)
-            .Select(item => new
-            {
-                item.Id,
-                item.SourceType,
-                item.ReferenceId,
-                item.UserId,
-                item.CardNumber,
-                item.Amount,
-                item.Description,
-                item.CreatedAt
-            })
-            .ToListAsync(cancellationToken);
-
-        return Ok(new
-        {
-            totalRevenue = totalBorrowRevenue + totalFineRevenue,
-            totalBorrowRevenue,
-            totalFineRevenue,
-            pendingFineAmount,
-            unpaidFineAmount,
-            borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
-            fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
-            recentRevenue
-        });
+    [HttpGet("revenue/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult> GetRevenueEmbedAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] string? period,
+        [FromQuery] DateTime? date,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int take = 20)
+    {
+        return Ok(await BuildRevenueSummaryAsync(period, date, from, to, take, cancellationToken));
     }
 
     [HttpGet("fines")]
@@ -3581,6 +3528,83 @@ public sealed class CirculationController : ControllerBase
         }
 
         return false;
+    }
+
+    private async Task<object> BuildRevenueSummaryAsync(
+        string? period,
+        DateTime? date,
+        DateTime? from,
+        DateTime? to,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var takeCount = Math.Clamp(take, 1, 200);
+
+        var hasWindow = TryBuildRevenueWindow(period, date, from, to, out var windowStart, out var windowEnd);
+        var revenueRecordsQuery = _dbContext.RevenueRecords
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            revenueRecordsQuery = revenueRecordsQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var totalBorrowRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .Where(item => item.SourceType == "BorrowApproval")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var totalFineRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .Where(item => item.SourceType == "FinePayment")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var finesQuery = _dbContext.FineCharges
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            finesQuery = finesQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var pendingFineAmount = await finesQuery
+            .Where(item => item.PaymentStatus == "PendingApproval" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var unpaidFineAmount = await finesQuery
+            .Where(item => item.PaymentStatus == "Unpaid" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var recentRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(takeCount)
+            .Select(item => new
+            {
+                item.Id,
+                item.SourceType,
+                item.ReferenceId,
+                item.UserId,
+                item.CardNumber,
+                item.Amount,
+                item.Description,
+                item.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return new
+        {
+            totalRevenue = totalBorrowRevenue + totalFineRevenue,
+            totalBorrowRevenue,
+            totalFineRevenue,
+            pendingFineAmount,
+            unpaidFineAmount,
+            borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
+            fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
+            recentRevenue
+        };
     }
 
     private sealed class BookInfo

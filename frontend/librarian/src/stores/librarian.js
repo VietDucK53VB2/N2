@@ -245,6 +245,27 @@ async function apiFetch(url, opts = {}) {
   return response
 }
 
+function isEmbedMode() {
+  try {
+    const search = new URLSearchParams(window.location.search)
+    if (search.get('embed') === '1' || search.get('embed') === 'true') return true
+
+    const hash = window.location.hash || ''
+    const idx = hash.indexOf('?')
+    if (idx === -1) return false
+
+    const hashParams = new URLSearchParams(hash.slice(idx + 1))
+    return hashParams.get('embed') === '1' || hashParams.get('embed') === 'true'
+  } catch {
+    return false
+  }
+}
+
+function isEmbedRevenueRoute() {
+  const hash = window.location.hash || ''
+  return hash.includes('/finance/revenue')
+}
+
 async function redeemCode(code) {
   const response = await fetch(HANDOFF_REDEEM_URL, {
     method: 'POST',
@@ -300,6 +321,10 @@ export async function initAuth() {
     const ok = await redeemCode(code)
     window.history.replaceState({}, '', window.location.pathname + window.location.hash)
     return ok
+  }
+
+  if (isEmbedMode() && isEmbedRevenueRoute()) {
+    return true
   }
 
   return Boolean(getToken())
@@ -427,7 +452,8 @@ export const useLibrarianStore = defineStore('librarian', () => {
       if (to) search.set('to', to)
       if (params.take) search.set('take', String(params.take))
 
-      const url = search.toString() ? `${CIRC_API}/revenue?${search.toString()}` : `${CIRC_API}/revenue`
+      const basePath = isEmbedMode() ? `${CIRC_API}/revenue/embed` : `${CIRC_API}/revenue`
+      const url = search.toString() ? `${basePath}?${search.toString()}` : basePath
       const r = await apiFetch(url)
       if (r.ok) revenueSummary.value = await r.json()
     } catch {}
