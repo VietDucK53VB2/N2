@@ -446,7 +446,7 @@ async function onToolbarMenuClick({ key }) {
 
 function doLogout() {
   localStorage.clear()
-  window.location.href = window.location.origin.replace(/:\d+$/, ':5082') + '/login'
+  window.location.href = 'http://163.223.210.87/login'
 }
 
 onMounted(() => {
