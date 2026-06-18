@@ -5,9 +5,33 @@ const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
 const N3_LOGIN_URL = `${window.location.origin}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
+const LIBRARIAN_AUTH_KEYS = ['authToken', 'token', 'readerCard', 'role', 'userInfo']
 
 function getToken() {
-  return localStorage.getItem('authToken') || localStorage.getItem('token')
+  return sessionStorage.getItem('authToken') || sessionStorage.getItem('token')
+}
+
+function getCachedUserInfo() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem('userInfo') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export function getLibrarianToken() {
+  return getToken()
+}
+
+export function getLibrarianUserInfo() {
+  return getCachedUserInfo()
+}
+
+export function clearLibrarianAuth() {
+  for (const key of LIBRARIAN_AUTH_KEYS) {
+    sessionStorage.removeItem(key)
+  }
 }
 
 function parseJwt(token) {
@@ -116,21 +140,8 @@ function extractCardNumberFromPayload(payload = {}, fallback = '') {
   )
 }
 
-function getCachedUserInfo() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
 function clearAuth() {
-  localStorage.removeItem('authToken')
-  localStorage.removeItem('token')
-  localStorage.removeItem('readerCard')
-  localStorage.removeItem('role')
-  localStorage.removeItem('userInfo')
+  clearLibrarianAuth()
 }
 
 function forceLogin() {
@@ -144,12 +155,12 @@ function storeAuthToken(token, cardNumber = '') {
   const role = extractRoleFromPayload(payload)
   const username = extractDisplayNameFromPayload(payload, '')
   const normalizedCardNumber = extractCardNumberFromPayload(payload, cardNumber)
-  localStorage.setItem('authToken', token)
-  localStorage.setItem('token', token)
-  if (normalizedCardNumber) localStorage.setItem('readerCard', normalizedCardNumber)
-  if (role) localStorage.setItem('role', role)
+  sessionStorage.setItem('authToken', token)
+  sessionStorage.setItem('token', token)
+  if (normalizedCardNumber) sessionStorage.setItem('readerCard', normalizedCardNumber)
+  if (role) sessionStorage.setItem('role', role)
   const cached = getCachedUserInfo()
-  localStorage.setItem('userInfo', JSON.stringify({
+  sessionStorage.setItem('userInfo', JSON.stringify({
     ...cached,
     fullName: extractDisplayNameFromPayload(cached, username || normalizedCardNumber),
     username: cached.username || username || normalizedCardNumber,
