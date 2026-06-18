@@ -172,6 +172,7 @@ import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons-
 
 const store = useLibrarianStore()
 const embedMode = store.embedMode
+const readOnlyEmbed = computed(() => embedMode && !store.hasAuthToken())
 const filter = ref('all')
 const actionId = ref(null)
 const conditionDialog = ref(false)
@@ -197,7 +198,7 @@ const columns = computed(() => {
     { title: 'Trạng thái', key: 'Status', width: 160 }
   ]
 
-  if (embedMode) return baseColumns
+  if (readOnlyEmbed.value) return baseColumns
   return [...baseColumns, { title: 'Hành động', key: 'actions', width: 280 }]
 })
 

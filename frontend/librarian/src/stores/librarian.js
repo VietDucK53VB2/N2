@@ -285,6 +285,10 @@ function isPublicEmbedRoute() {
   return isEmbedRevenueRoute() || isEmbedLoansRoute() || isEmbedFinesRoute() || isEmbedPricesRoute()
 }
 
+function hasAuthToken() {
+  return Boolean(getToken())
+}
+
 async function redeemCode(code) {
   const response = await fetch(HANDOFF_REDEEM_URL, {
     method: 'POST',
@@ -564,6 +568,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
   return {
     books, transactions, fines, revenueSummary, priceSettings, loading,
     embedMode: isEmbedMode(),
+    hasAuthToken,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,

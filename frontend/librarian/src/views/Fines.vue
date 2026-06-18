@@ -157,6 +157,7 @@ import { useLibrarianStore } from '@/stores/librarian'
 
 const libStore = useLibrarianStore()
 const embedMode = libStore.embedMode
+const readOnlyEmbed = computed(() => embedMode && !libStore.hasAuthToken())
 const filter = ref('all')
 const actionId = ref(null)
 const rejectDialog = ref(false)
@@ -177,7 +178,7 @@ const columns = computed(() => {
     { title: 'Trạng thái', key: 'PaymentStatus', width: 140 }
   ]
 
-  if (embedMode) return baseColumns
+  if (readOnlyEmbed.value) return baseColumns
   return [...baseColumns, { title: 'Hành động', key: 'actions', width: 240, sortable: false }]
 })
 
