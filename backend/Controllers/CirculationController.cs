@@ -2597,7 +2597,8 @@ public sealed class CirculationController : ControllerBase
 
     private static List<object> GroupReviews(IEnumerable<ReviewDto> reviews)
     {
-        return reviews
+        var uniqueReviews = DeduplicateReviews(reviews);
+        return uniqueReviews
             .GroupBy(item => item.BookId)
             .Select(group => new
             {
@@ -2634,9 +2635,7 @@ public sealed class CirculationController : ControllerBase
 
         foreach (var item in first.Concat(second))
         {
-            var key = !string.IsNullOrWhiteSpace(item.Id)
-                ? $"id:{item.Id}"
-                : $"{item.BookId}|{item.TransactionId}|{item.UserId}|{item.CardNumber}|{item.Rating}|{item.Comment}|{item.CreatedAt:O}";
+            var key = GetReviewDedupKey(item);
 
             if (seen.Add(key))
             {
@@ -2695,13 +2694,17 @@ public sealed class CirculationController : ControllerBase
         AddGroups(second);
 
         return groups
-            .Select(group => new
+            .Select(group =>
             {
-                bookId = group.Key,
-                title = group.Value.Title,
-                averageRating = group.Value.Reviews.Count > 0 ? Math.Round(group.Value.Reviews.Average(item => item.Rating), 1) : 0,
-                reviewCount = group.Value.Reviews.Count,
-                reviews = group.Value.Reviews.Select(ToReviewResponse).ToList()
+                var uniqueReviews = DeduplicateReviews(group.Value.Reviews);
+                return new
+                {
+                    bookId = group.Key,
+                    title = group.Value.Title,
+                    averageRating = uniqueReviews.Count > 0 ? Math.Round(uniqueReviews.Average(item => item.Rating), 1) : 0,
+                    reviewCount = uniqueReviews.Count,
+                    reviews = uniqueReviews.Select(ToReviewResponse).ToList()
+                };
             })
             .ToList<object>();
     }
@@ -3715,6 +3718,49 @@ public sealed class CirculationController : ControllerBase
         }
 
         return value.EnumerateArray().ToList();
+    }
+
+    private static List<ReviewDto> DeduplicateReviews(IEnumerable<ReviewDto> reviews)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unique = new List<ReviewDto>();
+
+        foreach (var review in reviews)
+        {
+            var key = GetReviewDedupKey(review);
+            if (seen.Add(key))
+            {
+                unique.Add(review);
+            }
+        }
+
+        return unique;
+    }
+
+    private static string GetReviewDedupKey(ReviewDto item)
+    {
+        if (item.TransactionId is not null && item.TransactionId != Guid.Empty)
+        {
+            return $"tx:{item.TransactionId.Value:D}";
+        }
+
+        if (item.ReviewId != Guid.Empty)
+        {
+            return $"review:{item.ReviewId:D}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Id))
+        {
+            return $"id:{item.Id}";
+        }
+
+        return string.Join("|",
+            item.BookId,
+            item.UserId ?? string.Empty,
+            item.CardNumber ?? string.Empty,
+            item.Rating,
+            item.Comment ?? string.Empty,
+            item.CreatedAt.ToUniversalTime().ToString("O"));
     }
 
     private sealed class ReviewDto

@@ -212,13 +212,41 @@ const durationSummary = computed(() => {
 function mapReview(review = {}) {
   const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
   return {
-    reviewKey: review.id || review.reviewId || `${fullName}-${review.createdAt || review.CreatedAt || Math.random()}`,
+    reviewKey: buildReviewKey(review),
     initials: String(fullName).split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2) || 'DG',
     name: fullName,
     rating: Number(review.rating ?? review.Rating ?? 0),
     date: formatReviewDate(review.createdAt || review.CreatedAt),
     comment: review.comment || review.Comment || ''
   }
+}
+
+function buildReviewKey(review = {}) {
+  const transactionId = review.transactionId || review.TransactionId
+  if (transactionId) return `tx:${transactionId}`
+
+  const reviewId = review.reviewId || review.ReviewId
+  if (reviewId) return `review:${reviewId}`
+
+  const id = review.id || review.Id
+  if (id) return `id:${id}`
+
+  const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
+  return `${fullName}-${review.createdAt || review.CreatedAt || review.comment || review.Comment || Math.random()}`
+}
+
+function dedupeReviews(list = []) {
+  const seen = new Set()
+  const unique = []
+
+  for (const review of list) {
+    const key = buildReviewKey(review)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(review)
+  }
+
+  return unique
 }
 
 function formatReviewDate(value) {
@@ -245,7 +273,7 @@ async function loadReviews(bookId) {
       Array.isArray(group?.reviews || group?.Reviews)
         ? (group.reviews || group.Reviews)
         : directReviews
-    reviews.value = list.map(mapReview)
+    reviews.value = dedupeReviews(list).map(mapReview)
   } catch {
     reviews.value = []
   } finally {
