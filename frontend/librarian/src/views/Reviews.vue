@@ -106,6 +106,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import { getLibrarianToken } from '@/stores/librarian'
 
 const loading = ref(false)
 const groups = ref([])
@@ -179,13 +180,13 @@ async function load() {
       fetch(`${window.location.origin}/api/circulation/books/reviews`, {
         headers: {
           'Content-Type': 'application/json',
-          ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
+          ...(getLibrarianToken() ? { Authorization: `Bearer ${getLibrarianToken()}` } : {})
         }
       }),
       fetch(`${window.location.origin}/api/catalog/books/products`, {
         headers: {
           'Content-Type': 'application/json',
-          ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
+          ...(getLibrarianToken() ? { Authorization: `Bearer ${getLibrarianToken()}` } : {})
         }
       })
     ])
@@ -244,7 +245,7 @@ async function deleteReview(record) {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
+          ...(getLibrarianToken() ? { Authorization: `Bearer ${getLibrarianToken()}` } : {})
         },
         body: JSON.stringify({
           BookId: record.bookId,
