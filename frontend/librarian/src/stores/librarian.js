@@ -6,6 +6,11 @@ const CATALOG_API = `${window.location.origin}/api/catalog/books`
 const N3_LOGIN_URL = `${window.location.origin}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 const LIBRARIAN_AUTH_KEYS = ['authToken', 'token', 'readerCard', 'role', 'userInfo']
+const LIBRARIAN_TAB_CHANNEL = 'librarian-tab-lock'
+const LIBRARIAN_TAB_PROBE_TIMEOUT_MS = 250
+
+let librarianTabChannel = null
+let librarianTabListenerReady = false
 
 function getToken() {
   return sessionStorage.getItem('authToken') || sessionStorage.getItem('token')
@@ -32,6 +37,60 @@ export function clearLibrarianAuth() {
   for (const key of LIBRARIAN_AUTH_KEYS) {
     sessionStorage.removeItem(key)
   }
+}
+
+function ensureLibrarianTabListener() {
+  if (librarianTabListenerReady) return
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return
+
+  librarianTabChannel = new BroadcastChannel(LIBRARIAN_TAB_CHANNEL)
+  librarianTabChannel.onmessage = (event) => {
+    const data = event?.data || {}
+    if (!data || typeof data !== 'object') return
+    if (data.type === 'hello' && data.requestId && hasAuthToken()) {
+      librarianTabChannel?.postMessage({
+        type: 'owner',
+        requestId: data.requestId
+      })
+    }
+  }
+  librarianTabListenerReady = true
+}
+
+async function probeLibrarianTabOwnership(timeoutMs = LIBRARIAN_TAB_PROBE_TIMEOUT_MS) {
+  ensureLibrarianTabListener()
+  if (!librarianTabChannel) return true
+
+  const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+  return await new Promise((resolve) => {
+    let settled = false
+    const finish = (allowed) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      librarianTabChannel?.removeEventListener('message', onMessage)
+      resolve(allowed)
+    }
+
+    const onMessage = (event) => {
+      const data = event?.data || {}
+      if (!data || typeof data !== 'object') return
+      if (data.type === 'owner' && data.requestId === requestId) {
+        finish(false)
+      }
+    }
+
+    librarianTabChannel.addEventListener('message', onMessage)
+    librarianTabChannel.postMessage({
+      type: 'hello',
+      requestId
+    })
+
+    const timer = window.setTimeout(() => finish(true), timeoutMs)
+  })
 }
 
 function parseJwt(token) {
@@ -377,6 +436,16 @@ export async function initAuth() {
   }
 
   return Boolean(getToken())
+}
+
+export function isLibrarianPublicEmbedRoute() {
+  return isPublicEmbedRoute()
+}
+
+export async function ensureLibrarianTabAccess() {
+  if (isPublicEmbedRoute()) return true
+  if (!hasAuthToken()) return false
+  return await probeLibrarianTabOwnership()
 }
 
 function isFinePaid(fine = {}) {
