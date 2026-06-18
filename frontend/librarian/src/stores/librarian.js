@@ -4,7 +4,11 @@ import { ref, computed } from 'vue'
 const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
 const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, '')}/login`
-const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
+const HANDOFF_REDEEM_URLS = [
+  `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`,
+  `${window.location.origin}/api/identity/Auth/handoff/redeem`,
+  `${window.location.origin}/api/circulation/auth/handoff/redeem`
+]
 
 function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
@@ -305,42 +309,50 @@ function hasAuthToken() {
 }
 
 async function redeemCode(code) {
-  const response = await fetch(HANDOFF_REDEEM_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code })
-  })
+  for (const url of HANDOFF_REDEEM_URLS) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      })
 
-  if (!response.ok) return false
+      if (!response.ok) continue
 
-  const raw = (await response.text()).trim()
-  let payload = null
+      const raw = (await response.text()).trim()
+      let payload = null
 
-  try {
-    payload = raw ? JSON.parse(raw) : null
-  } catch {
-    payload = raw ? { token: raw } : null
+      try {
+        payload = raw ? JSON.parse(raw) : null
+      } catch {
+        payload = raw ? { token: raw } : null
+      }
+
+      const token =
+        payload?.token ||
+        payload?.Token ||
+        payload?.accessToken ||
+        payload?.AccessToken ||
+        payload?.jwt ||
+        payload?.Jwt ||
+        (typeof payload === 'string' ? payload : '')
+
+      const cardNumber =
+        payload?.cardNumber ||
+        payload?.CardNumber ||
+        payload?.readerCardNumber ||
+        payload?.ReaderCardNumber ||
+        payload?.user?.cardNumber ||
+        payload?.user?.CardNumber ||
+        ''
+
+      if (storeAuthToken(token, cardNumber)) return true
+    } catch {
+      // Try the next candidate endpoint.
+    }
   }
 
-  const token =
-    payload?.token ||
-    payload?.Token ||
-    payload?.accessToken ||
-    payload?.AccessToken ||
-    payload?.jwt ||
-    payload?.Jwt ||
-    (typeof payload === 'string' ? payload : '')
-
-  const cardNumber =
-    payload?.cardNumber ||
-    payload?.CardNumber ||
-    payload?.readerCardNumber ||
-    payload?.ReaderCardNumber ||
-    payload?.user?.cardNumber ||
-    payload?.user?.CardNumber ||
-    ''
-
-  return storeAuthToken(token, cardNumber)
+  return false
 }
 
 export async function initAuth() {
