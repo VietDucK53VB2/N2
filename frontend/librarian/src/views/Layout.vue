@@ -401,7 +401,27 @@ const pendingNotices = computed(() => {
     }
   })
 })
-const showChrome = computed(() => window.location.pathname.startsWith('/ui/librarian/'))
+function readEmbedMode() {
+  const search = new URLSearchParams(window.location.search)
+  if (search.get('embed') === '1' || search.get('embed') === 'true') return true
+
+  const hash = window.location.hash || ''
+  if (!hash) return false
+
+  const idx = hash.indexOf('?')
+  if (idx === -1) return false
+
+  const hashParams = new URLSearchParams(hash.slice(idx + 1))
+  return hashParams.get('embed') === '1' || hashParams.get('embed') === 'true'
+}
+
+const isEmbedMode = ref(readEmbedMode())
+const showChrome = computed(() =>
+  window.location.pathname.startsWith('/ui/librarian/') && !isEmbedMode.value
+)
+function syncEmbedMode() {
+  isEmbedMode.value = readEmbedMode()
+}
 
 async function onToolbarMenuClick({ key }) {
   if (key === 'refresh') {
@@ -427,10 +447,14 @@ function doLogout() {
 onMounted(() => {
   syncSessionUser()
   window.addEventListener('storage', syncSessionUser)
+  window.addEventListener('hashchange', syncEmbedMode)
+  window.addEventListener('popstate', syncEmbedMode)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('storage', syncSessionUser)
+  window.removeEventListener('hashchange', syncEmbedMode)
+  window.removeEventListener('popstate', syncEmbedMode)
 })
 
 watch(
