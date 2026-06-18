@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
-using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +12,21 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddHttpClient();
 
+var jwtKey =
+    builder.Configuration["Jwt:Key"] ??
+    builder.Configuration["Jwt__Key"];
+var jwtIssuer =
+    builder.Configuration["Jwt:Issuer"] ??
+    builder.Configuration["Jwt__Issuer"];
+var jwtAudience =
+    builder.Configuration["Jwt:Audience"] ??
+    builder.Configuration["Jwt__Audience"];
+
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException("JWT signing key is missing from configuration.");
+}
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -20,14 +35,12 @@ builder.Services
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            // The identity service already verifies token authenticity and account state.
-            // N2 only needs to accept the JWT structure and then let the identity validation
-            // middleware enforce that the token is still active.
-            ValidateIssuerSigningKey = false,
-            RequireSignedTokens = false,
-            SignatureValidator = (token, parameters) => new JwtSecurityToken(token),
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ValidateIssuer = !string.IsNullOrWhiteSpace(jwtIssuer),
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = !string.IsNullOrWhiteSpace(jwtAudience),
+            ValidAudience = jwtAudience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
             RoleClaimType = ClaimTypes.Role,
