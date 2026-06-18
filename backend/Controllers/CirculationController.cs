@@ -2530,7 +2530,7 @@ public sealed class CirculationController : ControllerBase
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ReadReviewsFromJson(body, bookId);
+            return await EnrichReviewAuthorsAsync(ReadReviewsFromJson(body, bookId), cancellationToken);
         }
         catch
         {
@@ -2569,6 +2569,7 @@ public sealed class CirculationController : ControllerBase
                 var title = ReadString(book, "tenSach", "TenSach", "title", "Title") ?? id;
                 var latestReviews = ReadArray(book, "latestReviews", "LatestReviews");
                 var reviews = latestReviews.Select(item => TryReadReview(item, id)).Where(item => item is not null).Select(item => item!).ToList();
+                reviews = await EnrichReviewAuthorsAsync(reviews, cancellationToken);
                 var averageRating = ReadDecimal(book, "averageRating", "AverageRating");
                 var reviewCount = ReadInt(book, "reviewCount", "ReviewCount");
 
@@ -2620,11 +2621,80 @@ public sealed class CirculationController : ControllerBase
             .Select(item => item.PayloadJson)
             .ToListAsync(cancellationToken);
 
-        return logs
+        var reviews = logs
             .Select(TryReadReview)
             .Where(item => item is not null)
             .Select(item => item!)
             .Where(item => string.IsNullOrWhiteSpace(bookId) || string.Equals(item.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return await EnrichReviewAuthorsAsync(reviews, cancellationToken);
+    }
+
+    private async Task<List<ReviewDto>> EnrichReviewAuthorsAsync(IEnumerable<ReviewDto> reviews, CancellationToken cancellationToken)
+    {
+        var list = reviews.ToList();
+        var cardNumbers = list
+            .Select(item => item.CardNumber?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (cardNumbers.Count == 0)
+        {
+            return list;
+        }
+
+        Dictionary<string, ReaderIdentityInfo> usersByCard;
+        try
+        {
+            usersByCard = await GetUsersFromIdentityByCardAsync(cardNumbers!, cancellationToken);
+        }
+        catch
+        {
+            return list;
+        }
+
+        if (usersByCard.Count == 0)
+        {
+            return list;
+        }
+
+        return list
+            .Select(review =>
+            {
+                if (string.IsNullOrWhiteSpace(review.CardNumber) ||
+                    !usersByCard.TryGetValue(review.CardNumber.Trim(), out var identity))
+                {
+                    return review;
+                }
+
+                var fullName = !string.IsNullOrWhiteSpace(review.FullName)
+                    ? review.FullName
+                    : !string.IsNullOrWhiteSpace(identity.FullName)
+                        ? identity.FullName
+                        : identity.Username;
+
+                var username = !string.IsNullOrWhiteSpace(review.Username)
+                    ? review.Username
+                    : identity.Username;
+
+                return new ReviewDto
+                {
+                    Id = review.Id,
+                    ReviewId = review.ReviewId,
+                    BookId = review.BookId,
+                    Title = review.Title,
+                    TransactionId = review.TransactionId,
+                    UserId = review.UserId,
+                    CardNumber = review.CardNumber ?? identity.CardNumber,
+                    Username = username,
+                    FullName = fullName,
+                    Rating = review.Rating,
+                    Comment = review.Comment,
+                    CreatedAt = review.CreatedAt
+                };
+            })
             .ToList();
     }
 
