@@ -10,6 +10,10 @@
     <div class="cart-grid">
       <div class="cart-main-col">
         <v-card rounded="xl" class="cart-panel" elevation="1">
+          <v-alert v-if="submitError" type="error" variant="tonal" density="compact" class="mb-4">
+            {{ submitError }}
+          </v-alert>
+
           <div class="panel-head">
             <h3 class="panel-title">Danh sách trong giỏ</h3>
             <v-btn variant="text" color="error" prepend-icon="mdi-trash-can-outline" :disabled="!items.length" @click="clearAll">
@@ -43,8 +47,8 @@
                   </div>
 
                   <div class="field-box">
-                    <span class="field-label">Số ngày</span>
-                    <strong class="field-value">{{ item.borrowDays }}</strong>
+                    <span class="field-label">Thời lượng</span>
+                    <strong class="field-value">{{ item.borrowDurationText }}</strong>
                   </div>
 
                   <div class="field-box full-width">
@@ -57,6 +61,7 @@
                     <v-text-field
                       v-model="item.borrowDueAt"
                       type="datetime-local"
+                      step="1"
                       density="compact"
                       variant="outlined"
                       hide-details
@@ -122,29 +127,44 @@
 <script setup>
 import { computed, onMounted, watch, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { formatMoney, getDisplayName } from '@/utils/helpers'
+import { formatMoney, getDisplayName, formatDurationText } from '@/utils/helpers'
+import { borrowBook, getReaderCard } from '@/utils/api'
 
 const store = useAppStore()
 const submitting = ref(false)
+const submitError = ref('')
 
 const items = computed(() => store.cartItems)
 const userName = computed(() => getDisplayName(store.userInfo || {}, 'b?n'))
 const totalQuantity = computed(() => items.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
 const totalPrice = computed(() => items.value.reduce((sum, item) => sum + lineTotal(item), 0))
-const remainingInMonth = computed(() => Math.max(0, 10 - totalQuantity.value))
+const monthlyBorrowLimit = computed(() => {
+  const settings = store.priceSettings || {}
+  const value = Number(settings.monthlyBorrowLimit ?? settings.MonthlyBorrowLimit ?? 5)
+  return Number.isFinite(value) && value > 0 ? value : 5
+})
+const activeBorrowCount = computed(() => store.activeTransactions.length)
+const remainingBorrowAllowance = computed(() =>
+  Math.max(0, monthlyBorrowLimit.value - activeBorrowCount.value)
+)
+const remainingInMonth = computed(() =>
+  Math.max(0, remainingBorrowAllowance.value - totalQuantity.value)
+)
 
 function ensureItem(item) {
   if (!item) return
   if (!item.quantity || item.quantity < 1) item.quantity = 1
   if (!item.borrowDays || item.borrowDays < 1) item.borrowDays = 1
   if (!item.borrowDays || Number.isNaN(Number(item.borrowDays))) item.borrowDays = 1
-  if (!item.borrowDueAt) item.borrowDueAt = addDaysToLocalIso(14)
+  if (!item.borrowDueAt) item.borrowDueAt = addHoursToLocalIso(1)
+  item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
 }
 
 function syncItem(item) {
   ensureItem(item)
   const days = daysFromDueAt(item.borrowDueAt)
   item.borrowDays = days
+  item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
   store.cartItems = [...store.cartItems]
 }
 
@@ -157,9 +177,9 @@ function lineTotal(item) {
   return pricePerDay() * Number(item.quantity || 1) * Number(item.borrowDays || 1)
 }
 
-function addDaysToLocalIso(days) {
+function addHoursToLocalIso(hours) {
   const base = new Date()
-  base.setDate(base.getDate() + Number(days || 1))
+  base.setTime(base.getTime() + Number(hours || 1) * 60 * 60 * 1000)
   const pad = value => String(value).padStart(2, '0')
   return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`
 }
@@ -179,6 +199,7 @@ function normalizeCart() {
     const beforeDueAt = item.borrowDueAt
     ensureItem(item)
     item.borrowDays = daysFromDueAt(item.borrowDueAt)
+    item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
     if (beforeDays !== item.borrowDays || beforeQty !== item.quantity) changed = true
     if (beforeDueAt !== item.borrowDueAt) changed = true
   })
@@ -195,11 +216,38 @@ function clearAll() {
 
 async function submitCart() {
   if (!items.value.length) return
+  if (totalQuantity.value > remainingBorrowAllowance.value) {
+    submitError.value = `Bạn chỉ còn ${remainingBorrowAllowance.value} lượt mượn trong tháng.`
+    return
+  }
   submitting.value = true
+  submitError.value = ''
   try {
-    // Tạm thời giữ nút ở mức mô phỏng để bạn test giao diện trước.
-    await new Promise(resolve => setTimeout(resolve, 600))
+    const card = getReaderCard()
+    if (!card) {
+      throw new Error('Không tìm thấy mã thẻ độc giả.')
+    }
+
+    for (const item of items.value) {
+      const borrowedAt = new Date().toISOString()
+      const dueAt = new Date(item.borrowDueAt || Date.now() + 60 * 60 * 1000).toISOString()
+      const response = await borrowBook(card, item.id, Number(item.quantity || 1), {
+        borrowedAt,
+        dueAt,
+        isbn: item.isbn || item.Isbn || item.ISBN || ''
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null)
+        throw new Error(data?.message || data?.Message || `Không mượn được "${item.tenSach}".`)
+      }
+    }
+
     store.clearCart()
+    await store.loadAll()
+  } catch (error) {
+    console.error(error)
+    submitError.value = error?.message || 'Không mượn được sách trong giỏ. Vui lòng thử lại.'
   } finally {
     submitting.value = false
   }

@@ -16,5 +16,9 @@ public sealed class FineCharge
 
     public DateTime CreatedAt { get; set; }
 
+    public string PaymentStatus { get; set; } = "Unpaid";
+
+    public DateTime? PaymentRequestedAt { get; set; }
+
     public DateTime? PaidAt { get; set; }
 }

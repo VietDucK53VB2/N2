@@ -36,6 +36,19 @@
             <div class="book-cover" :style="{ backgroundColor: titleColor(book.tenSach) }">
               <v-img v-if="book.imageUrl" :src="book.imageUrl" cover class="cover-img" />
               <v-icon v-else size="44" color="white" style="opacity:.35">mdi-book-open-variant</v-icon>
+              <v-btn
+                icon
+                size="x-small"
+                class="heart-btn"
+                :class="{ 'is-favorite': store.isFavorite(book.id) }"
+                type="button"
+                :ripple="false"
+                @click.stop.prevent="toggleFavorite(book, $event)"
+              >
+                <v-icon size="18" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
+                  {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
+                </v-icon>
+              </v-btn>
             </div>
             <v-card-text class="pa-4">
               <p class="book-title">{{ book.tenSach }}</p>
@@ -92,6 +105,12 @@ const filtered = computed(() => {
   if (category === 'all') return books.slice(0, 12)
   return books.filter(book => bookMatchesCategory(book, category)).slice(0, 12)
 })
+
+async function toggleFavorite(book, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  await store.toggleFavorite(book)
+}
 
 onMounted(() => store.loadBooks())
 </script>
@@ -198,6 +217,19 @@ onMounted(() => store.loadBooks())
   inset: 0;
   width: 100% !important;
   height: 100% !important;
+}
+
+.heart-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.heart-btn.is-favorite {
+  background: rgba(255,255,255,0.98);
 }
 
 .book-title {

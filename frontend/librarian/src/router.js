@@ -1,7 +1,7 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 
 export default createRouter({
-  history: createWebHashHistory('/ui/librarian/'),
+  history: createWebHistory('/ui/librarian/'),
   routes: [
     {
       path: '/',
@@ -14,7 +14,11 @@ export default createRouter({
         { path: 'reviews', name: 'reviews', component: () => import('./views/Reviews.vue') },
         { path: 'finance/prices', name: 'finance-prices', component: () => import('./views/FinancePrices.vue') },
         { path: 'finance/revenue', name: 'finance-revenue', component: () => import('./views/FinanceRevenue.vue') },
-        { path: 'fines', name: 'fines', component: () => import('./views/Fines.vue') }
+        { path: 'fines', name: 'fines', component: () => import('./views/Fines.vue') },
+        { path: 'embed/loans', name: 'embed-loans', component: () => import('./views/Loans.vue') },
+        { path: 'embed/fines', name: 'embed-fines', component: () => import('./views/Fines.vue') },
+        { path: 'embed/prices', name: 'embed-prices', component: () => import('./views/FinancePrices.vue') },
+        { path: 'embed/revenue', name: 'embed-revenue', component: () => import('./views/FinanceRevenue.vue') }
       ]
     }
   ]

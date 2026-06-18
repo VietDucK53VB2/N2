@@ -53,4 +53,36 @@ public sealed class CatalogController : ControllerBase
             return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
         }
     }
+
+    [HttpGet("products")]
+    [AllowAnonymous]
+    public async Task<ActionResult> GetProductsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            if (Request.Headers.TryGetValue("Authorization", out var authorization) &&
+                !string.IsNullOrWhiteSpace(authorization.ToString()))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", authorization.ToString());
+            }
+
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                return StatusCode((int)response.StatusCode, new { Message = "Catalog service unavailable." });
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/json";
+            return new ContentResult
+            {
+                Content = body,
+                ContentType = contentType,
+                StatusCode = (int)response.StatusCode
+            };
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(503, new { Message = "Cannot connect to Catalog Service." });
+        }
+    }
 }

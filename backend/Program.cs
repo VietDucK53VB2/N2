@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddHttpClient();
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"] ?? "Your_Super_Secret_Key_For_JWT_Validation_Needs_To_Be_Long_Enough";
+var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"] ?? "eY3zS9VfK8pB9a4sTc2X9ZkL7rN0yGq7";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? builder.Configuration["Jwt__Issuer"] ?? "IdentityReportService";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? builder.Configuration["Jwt__Audience"] ?? "LibraryMicroservices";
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
@@ -237,35 +237,11 @@ app.Use(async (context, next) =>
 
     var path = context.Request.Path.Value ?? "/";
 
-    // Root → wwwroot/index.html
+    // Root should go to login so the host landing page behaves as expected.
     if (path == "/" || path == "/index.html")
     {
-        var rootIndex = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "index.html");
-        if (File.Exists(rootIndex))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(rootIndex);
-            return;
-        }
-    }
-
-    // /ui/{role}/ → wwwroot/ui/{role}/index.html
-    var segments = path.Trim('/').Split('/');
-    if (segments.Length == 2)
-    {
-        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", segments[0], segments[1], "index.html");
-        if (File.Exists(indexPath))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(indexPath);
-            return;
-        }
+        context.Response.Redirect("http://163.223.210.87/login");
+        return;
     }
 
     // Try direct file
@@ -286,6 +262,36 @@ app.Use(async (context, next) =>
         context.Response.ContentType = ct;
         await context.Response.SendFileAsync(directPath);
         return;
+    }
+
+    // SPA fallback for the librarian UI, including embedded public routes.
+    if (path.StartsWith("/ui/librarian", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "librarian", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
+    }
+
+    // SPA fallback for the reader UI.
+    if (path.StartsWith("/ui/reader", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "reader", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
     }
 
     await next();

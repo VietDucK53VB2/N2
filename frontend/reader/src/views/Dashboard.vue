@@ -97,6 +97,19 @@
               <v-img v-if="book.imageUrl" :src="book.imageUrl" cover class="cover-img" />
               <v-icon v-else size="48" color="white" style="opacity:0.3;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)">mdi-book-open-variant</v-icon>
               <div class="cover-shine"></div>
+              <v-btn
+                icon
+                size="x-small"
+                class="heart-btn"
+                :class="{ 'is-favorite': store.isFavorite(book.id) }"
+                type="button"
+                :ripple="false"
+                @click.stop.prevent="toggleFavorite(book, $event)"
+              >
+                <v-icon size="18" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
+                  {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
+                </v-icon>
+              </v-btn>
               <v-chip
                 v-if="activeCategory === 'popular' && book._borrowCount > 0"
                 class="fire-badge"
@@ -212,6 +225,11 @@ const popularCountMap = computed(() => {
 
 function rankColor(i) { return ['amber-darken-1', 'blue-grey', 'deep-orange'][i] || 'grey-darken-1' }
 function openDetail(book, count = 0) { selectedBook.value = book; selectedBorrowCount.value = count; detailDialog.value = true }
+async function toggleFavorite(book, event) {
+  event?.preventDefault?.()
+  event?.stopPropagation?.()
+  await store.toggleFavorite(book)
+}
 function handleBorrowed(payload = {}) {
   store.loadAll()
   const quantity = payload.quantity || 1
@@ -359,6 +377,17 @@ function getStatusText(tx) {
 .rank-badge { position: absolute; top: 6px; left: 6px; font-weight: 800; z-index: 2; }
 .fire-badge { position: absolute; bottom: 6px; right: 6px; z-index: 2; }
 .status-badge { position: absolute; top: 6px; right: 6px; font-weight: 600; z-index: 2; }
+.heart-btn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+.heart-btn.is-favorite {
+  background: rgba(255,255,255,0.98);
+}
 
 .book-title {
   font-size: 13px; font-weight: 700; line-height: 1.4; letter-spacing: -0.01em;

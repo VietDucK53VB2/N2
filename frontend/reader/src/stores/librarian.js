@@ -43,8 +43,57 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
 
-  async function rejectTransaction(id) {
-    const r = await authFetch(`${CIRC_API}/transactions/${id}/reject`, { method: 'POST' })
+  function promptRejectReason(defaultReason = 'Không đủ điều kiện') {
+    const text = window.prompt('Nhập lý do từ chối', defaultReason)
+    return text?.trim() || ''
+  }
+
+  async function rejectTransaction(id, reason = '') {
+    const r = await authFetch(`${CIRC_API}/transactions/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ Reason: reason, reason })
+    })
+    if (r.ok) await loadTransactions()
+    return r
+  }
+
+  async function renewTransaction(id, extraDays = 7, reason = '') {
+    const r = await authFetch(`${CIRC_API}/transactions/${id}/renew`, {
+      method: 'POST',
+      body: JSON.stringify({ ExtraDays: extraDays, extraDays, Reason: reason, reason })
+    })
+    if (r.ok) await loadTransactions()
+    return r
+  }
+
+  async function rejectRenew(id, reason = '') {
+    const r = await authFetch(`${CIRC_API}/transactions/${id}/renew/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ Reason: reason, reason })
+    })
+    if (r.ok) await loadTransactions()
+    return r
+  }
+
+  async function approveReturn(id, payload = {}) {
+    const r = await authFetch(`${CIRC_API}/transactions/${id}/return/approve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        Condition: payload.condition || payload.Condition || 'Good',
+        condition: payload.condition || payload.Condition || 'Good',
+        ConditionNote: payload.conditionNote || payload.ConditionNote || '',
+        conditionNote: payload.conditionNote || payload.ConditionNote || ''
+      })
+    })
+    if (r.ok) await loadTransactions()
+    return r
+  }
+
+  async function rejectReturn(id, reason = '') {
+    const r = await authFetch(`${CIRC_API}/transactions/${id}/return/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ Reason: reason, reason })
+    })
     if (r.ok) await loadTransactions()
     return r
   }
@@ -64,6 +113,15 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
 
+  async function rejectFinePayment(fineId, reason = '') {
+    const r = await authFetch(`${CIRC_API}/fines/${fineId}/reject-payment`, {
+      method: 'POST',
+      body: JSON.stringify({ Reason: reason, reason })
+    })
+    if (r.ok) await loadFines()
+    return r
+  }
+
   async function loadAll() {
     await Promise.all([loadTransactions(), loadFines()])
   }
@@ -72,6 +130,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
     transactions, fines, loading,
     pendingCount, overdueCount, activeCount,
     loadTransactions, loadFines, loadAll,
-    approveTransaction, rejectTransaction, returnBook, markFinePaid
+    approveTransaction, promptRejectReason, rejectTransaction, renewTransaction, rejectRenew,
+    approveReturn, rejectReturn, returnBook, markFinePaid, rejectFinePayment
   }
 })
