@@ -1600,15 +1600,17 @@ public sealed class CirculationController : ControllerBase
         [FromQuery] string? bookId,
         CancellationToken cancellationToken)
     {
+        var deletedReviewKeys = await GetDeletedReviewKeysAsync(bookId?.Trim(), cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(bookId))
         {
-            var catalogReviews = await GetCatalogBookReviewsAsync(bookId.Trim(), cancellationToken);
-            var localReviews = await GetLocalBookReviewsAsync(bookId.Trim(), cancellationToken);
+            var catalogReviews = await GetCatalogBookReviewsAsync(bookId.Trim(), deletedReviewKeys, cancellationToken);
+            var localReviews = await GetLocalBookReviewsAsync(bookId.Trim(), deletedReviewKeys, cancellationToken);
             return Ok(GroupReviews(MergeReviews(catalogReviews, localReviews)));
         }
 
-        var catalogGrouped = await GetCatalogReviewsFromBooksAsync(cancellationToken);
-        var localGrouped = GroupReviews(await GetLocalBookReviewsAsync(null, cancellationToken));
+        var catalogGrouped = await GetCatalogReviewsFromBooksAsync(deletedReviewKeys, cancellationToken);
+        var localGrouped = GroupReviews(FilterDeletedReviews(await GetLocalBookReviewsAsync(null, deletedReviewKeys, cancellationToken), deletedReviewKeys));
 
         if (catalogGrouped.Count == 0)
         {
@@ -1621,6 +1623,63 @@ public sealed class CirculationController : ControllerBase
         }
 
         return Ok(MergeGroupedReviews(catalogGrouped, localGrouped));
+    }
+
+    [HttpDelete("books/{bookId}/reviews/{reviewKey}")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> DeleteReviewAsync(
+        string bookId,
+        string reviewKey,
+        CancellationToken cancellationToken)
+    {
+        var requestedBookId = bookId.Trim();
+        var requestedReviewKey = reviewKey.Trim();
+        if (string.IsNullOrWhiteSpace(requestedBookId) || string.IsNullOrWhiteSpace(requestedReviewKey))
+        {
+            return BadRequest(new { Message = "BookId and review key are required." });
+        }
+
+        var deletedReviewKeys = await GetDeletedReviewKeysAsync(requestedBookId, cancellationToken);
+        var reviews = await GetLocalBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
+        var catalogReviews = await GetCatalogBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
+        var review = MergeReviews(catalogReviews, reviews)
+            .FirstOrDefault(item => MatchesReviewKey(item, requestedReviewKey));
+
+        if (review is null)
+        {
+            return NotFound(new { Message = "Review not found." });
+        }
+
+        if (await IsReviewDeletedAsync(review, cancellationToken))
+        {
+            return Conflict(new { Message = "This review has already been deleted." });
+        }
+
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("book.review.deleted", new
+        {
+            BookId = review.BookId,
+            review.Id,
+            ReviewId = review.ReviewId == Guid.Empty ? (Guid?)null : review.ReviewId,
+            review.TransactionId,
+            review.UserId,
+            review.CardNumber,
+            review.Username,
+            review.FullName,
+            review.Rating,
+            review.Comment,
+            DeletedAt = DateTimeOffset.UtcNow,
+            DeletedBy = GetClaimValue(ClaimTypes.NameIdentifier) ?? GetClaimValue("sub"),
+            DeletedByName = GetClaimValue("fullName") ?? GetClaimValue(ClaimTypes.Name) ?? GetClaimValue("username")
+        }));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            Message = "Review deleted.",
+            BookId = review.BookId,
+            ReviewKey = requestedReviewKey
+        });
     }
 
     [HttpPost("transactions/{id}/approve")]
@@ -2189,7 +2248,10 @@ public sealed class CirculationController : ControllerBase
         return new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
     }
 
-    private async Task<List<ReviewDto>> GetCatalogBookReviewsAsync(string bookId, CancellationToken cancellationToken)
+    private async Task<List<ReviewDto>> GetCatalogBookReviewsAsync(
+        string bookId,
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -2202,7 +2264,9 @@ public sealed class CirculationController : ControllerBase
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return await EnrichReviewAuthorsAsync(ReadReviewsFromJson(body, bookId), cancellationToken);
+            return FilterDeletedReviews(
+                await EnrichReviewAuthorsAsync(ReadReviewsFromJson(body, bookId), cancellationToken),
+                deletedReviewKeys);
         }
         catch
         {
@@ -2210,7 +2274,9 @@ public sealed class CirculationController : ControllerBase
         }
     }
 
-    private async Task<List<object>> GetCatalogReviewsFromBooksAsync(CancellationToken cancellationToken)
+    private async Task<List<object>> GetCatalogReviewsFromBooksAsync(
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -2241,7 +2307,7 @@ public sealed class CirculationController : ControllerBase
                 var title = ReadString(book, "tenSach", "TenSach", "title", "Title") ?? id;
                 var latestReviews = ReadArray(book, "latestReviews", "LatestReviews");
                 var reviews = latestReviews.Select(item => TryReadReview(item, id)).Where(item => item is not null).Select(item => item!).ToList();
-                reviews = await EnrichReviewAuthorsAsync(reviews, cancellationToken);
+                reviews = FilterDeletedReviews(await EnrichReviewAuthorsAsync(reviews, cancellationToken), deletedReviewKeys);
                 var averageRating = ReadDecimal(book, "averageRating", "AverageRating");
                 var reviewCount = ReadInt(book, "reviewCount", "ReviewCount");
 
@@ -2284,7 +2350,10 @@ public sealed class CirculationController : ControllerBase
             .ToList<object>();
     }
 
-    private async Task<List<ReviewDto>> GetLocalBookReviewsAsync(string? bookId, CancellationToken cancellationToken)
+    private async Task<List<ReviewDto>> GetLocalBookReviewsAsync(
+        string? bookId,
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         var logs = await _dbContext.PublishedEventLogs
             .AsNoTracking()
@@ -2300,7 +2369,80 @@ public sealed class CirculationController : ControllerBase
             .Where(item => string.IsNullOrWhiteSpace(bookId) || string.Equals(item.BookId, bookId, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        return await EnrichReviewAuthorsAsync(reviews, cancellationToken);
+        return FilterDeletedReviews(await EnrichReviewAuthorsAsync(reviews, cancellationToken), deletedReviewKeys);
+    }
+
+    private async Task<HashSet<string>> GetDeletedReviewKeysAsync(string? bookId, CancellationToken cancellationToken)
+    {
+        var logs = await _dbContext.PublishedEventLogs
+            .AsNoTracking()
+            .Where(item => item.EventType == "book.review.deleted")
+            .OrderByDescending(item => item.PublishedAt)
+            .Select(item => item.PayloadJson)
+            .ToListAsync(cancellationToken);
+
+        var deletedReviews = logs
+            .Select(TryReadReview)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .Where(item => string.IsNullOrWhiteSpace(bookId) || string.Equals(item.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return deletedReviews
+            .SelectMany(GetReviewLookupKeys)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static List<ReviewDto> FilterDeletedReviews(
+        IEnumerable<ReviewDto> reviews,
+        IReadOnlyCollection<string> deletedReviewKeys)
+    {
+        if (deletedReviewKeys.Count == 0)
+        {
+            return reviews.ToList();
+        }
+
+        return reviews
+            .Where(review => !IsDeletedReview(review, deletedReviewKeys))
+            .ToList();
+    }
+
+    private async Task<bool> IsReviewDeletedAsync(ReviewDto review, CancellationToken cancellationToken)
+    {
+        var deletedKeys = await GetDeletedReviewKeysAsync(review.BookId, cancellationToken);
+        return IsDeletedReview(review, deletedKeys);
+    }
+
+    private static bool IsDeletedReview(ReviewDto review, IReadOnlyCollection<string> deletedReviewKeys)
+    {
+        foreach (var key in GetReviewLookupKeys(review))
+        {
+            if (deletedReviewKeys.Contains(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesReviewKey(ReviewDto review, string reviewKey)
+    {
+        if (string.IsNullOrWhiteSpace(reviewKey))
+        {
+            return false;
+        }
+
+        foreach (var key in GetReviewLookupKeys(review))
+        {
+            if (string.Equals(key, reviewKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<List<ReviewDto>> EnrichReviewAuthorsAsync(IEnumerable<ReviewDto> reviews, CancellationToken cancellationToken)
@@ -3888,19 +4030,30 @@ public sealed class CirculationController : ControllerBase
 
     private static IEnumerable<string> GetReviewDedupKeys(ReviewDto item)
     {
+        foreach (var key in GetReviewLookupKeys(item))
+        {
+            yield return key;
+        }
+    }
+
+    private static IEnumerable<string> GetReviewLookupKeys(ReviewDto item)
+    {
         if (item.TransactionId is not null && item.TransactionId != Guid.Empty)
         {
+            yield return item.TransactionId.Value.ToString("D");
             yield return $"tx:{item.TransactionId.Value:D}";
         }
 
         if (item.ReviewId != Guid.Empty)
         {
+            yield return item.ReviewId.ToString("D");
             yield return $"review:{item.ReviewId:D}";
         }
 
         if (!string.IsNullOrWhiteSpace(item.Id))
         {
-            yield return $"id:{item.Id}";
+            yield return item.Id.Trim();
+            yield return $"id:{item.Id.Trim()}";
         }
 
         yield return string.Join("|",
