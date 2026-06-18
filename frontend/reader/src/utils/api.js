@@ -277,13 +277,11 @@ export async function fetchBooks() {
   if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/catalog/books`,
-      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/catalog/books/products`,
-      GATEWAY_CATALOG_BOOKS,
-      GATEWAY_CATALOG_BOOKS_PRODUCTS,
-      `${window.location.origin}/api/catalog/books`,
-      `${window.location.origin}/api/books`,
-      `${BASE}/books`
+      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/books`,
+      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/books/available`,
+      `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books`,
+      `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books/products`,
+      `${window.location.origin}/api/books`
     ], { forceLoginOn401: false })
     return Array.isArray(data) ? data.map(normalizeBook) : []
   } catch { return [] }
