@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
-const N3_LOGIN_URL = `${window.location.origin}/login`
+const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, '')}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 
 function getToken() {
