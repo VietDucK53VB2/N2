@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Security.Claims;
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
@@ -12,34 +12,23 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddHttpClient();
 
-var jwtKey =
-    builder.Configuration["Jwt:Key"] ??
-    builder.Configuration["Jwt__Key"];
-var jwtIssuer =
-    builder.Configuration["Jwt:Issuer"] ??
-    builder.Configuration["Jwt__Issuer"];
-var jwtAudience =
-    builder.Configuration["Jwt:Audience"] ??
-    builder.Configuration["Jwt__Audience"];
-
-if (string.IsNullOrWhiteSpace(jwtKey))
-{
-    throw new InvalidOperationException("JWT signing key is missing from configuration.");
-}
+var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"] ?? "Your_Super_Secret_Key_For_JWT_Validation_Needs_To_Be_Long_Enough";
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? builder.Configuration["Jwt__Issuer"] ?? "IdentityReportService";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? builder.Configuration["Jwt__Audience"] ?? "LibraryMicroservices";
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = false;
-        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ValidateIssuer = !string.IsNullOrWhiteSpace(jwtIssuer),
+            IssuerSigningKey = signingKey,
+            ValidateIssuer = true,
             ValidIssuer = jwtIssuer,
-            ValidateAudience = !string.IsNullOrWhiteSpace(jwtAudience),
+            ValidateAudience = true,
             ValidAudience = jwtAudience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
@@ -279,21 +268,6 @@ app.Use(async (context, next) =>
     if (path.StartsWith("/ui/librarian", StringComparison.OrdinalIgnoreCase))
     {
         var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "librarian", "index.html");
-        if (File.Exists(indexPath))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(indexPath);
-            return;
-        }
-    }
-
-    // SPA fallback for the reader UI.
-    if (path.StartsWith("/ui/reader", StringComparison.OrdinalIgnoreCase))
-    {
-        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "reader", "index.html");
         if (File.Exists(indexPath))
         {
             context.Response.ContentType = "text/html; charset=utf-8";
