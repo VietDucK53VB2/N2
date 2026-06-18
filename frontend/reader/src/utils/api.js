@@ -255,7 +255,7 @@ async function authFetchWithFallback(path, opts = {}) {
   return authFetch(fallback, opts)
 }
 
-async function fetchJsonFromCandidates(paths = []) {
+async function fetchJsonFromCandidates(paths = [], { forceLoginOn401 = true } = {}) {
   let lastResponse = null
   for (const path of paths) {
     try {
@@ -267,7 +267,7 @@ async function fetchJsonFromCandidates(paths = []) {
       // Try the next candidate.
     }
   }
-  if (lastResponse && lastResponse.status === 401 && authBootstrapComplete) {
+  if (forceLoginOn401 && lastResponse && lastResponse.status === 401 && authBootstrapComplete) {
     forceLogin()
   }
   return null
@@ -277,12 +277,14 @@ export async function fetchBooks() {
   if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
-      `${window.location.origin}/api/catalog/books`,
-      `${window.location.origin}/api/books`,
+      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/catalog/books`,
+      `${window.location.origin.replace(/:\d+$/, ':5185')}/api/catalog/books/products`,
       GATEWAY_CATALOG_BOOKS,
       GATEWAY_CATALOG_BOOKS_PRODUCTS,
+      `${window.location.origin}/api/catalog/books`,
+      `${window.location.origin}/api/books`,
       `${BASE}/books`
-    ])
+    ], { forceLoginOn401: false })
     return Array.isArray(data) ? data.map(normalizeBook) : []
   } catch { return [] }
 }
