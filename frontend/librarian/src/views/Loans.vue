@@ -171,6 +171,7 @@ import { useLibrarianStore } from '@/stores/librarian'
 import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 
 const store = useLibrarianStore()
+const embedMode = store.embedMode
 const filter = ref('all')
 const actionId = ref(null)
 const conditionDialog = ref(false)
@@ -187,14 +188,18 @@ const rejectForm = reactive({
   reason: ''
 })
 
-const columns = [
-  { title: 'Độc giả', key: 'reader', width: 220 },
-  { title: 'Sách', key: 'book' },
-  { title: 'Ngày mượn', key: 'BorrowedAt', width: 120 },
-  { title: 'Hạn trả', key: 'DueAt', width: 120 },
-  { title: 'Trạng thái', key: 'Status', width: 160 },
-  { title: 'Hành động', key: 'actions', width: 280 }
-]
+const columns = computed(() => {
+  const baseColumns = [
+    { title: 'Độc giả', key: 'reader', width: 220 },
+    { title: 'Sách', key: 'book' },
+    { title: 'Ngày mượn', key: 'BorrowedAt', width: 120 },
+    { title: 'Hạn trả', key: 'DueAt', width: 120 },
+    { title: 'Trạng thái', key: 'Status', width: 160 }
+  ]
+
+  if (embedMode) return baseColumns
+  return [...baseColumns, { title: 'Hành động', key: 'actions', width: 280 }]
+})
 
 const filteredTx = computed(() => {
   if (filter.value === 'all') return store.transactions

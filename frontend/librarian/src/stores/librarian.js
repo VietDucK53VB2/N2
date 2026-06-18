@@ -266,6 +266,25 @@ function isEmbedRevenueRoute() {
   return hash.includes('/finance/revenue')
 }
 
+function isEmbedLoansRoute() {
+  const hash = window.location.hash || ''
+  return hash.includes('/loans')
+}
+
+function isEmbedFinesRoute() {
+  const hash = window.location.hash || ''
+  return hash.includes('/fines')
+}
+
+function isEmbedPricesRoute() {
+  const hash = window.location.hash || ''
+  return hash.includes('/finance/prices')
+}
+
+function isPublicEmbedRoute() {
+  return isEmbedRevenueRoute() || isEmbedLoansRoute() || isEmbedFinesRoute() || isEmbedPricesRoute()
+}
+
 async function redeemCode(code) {
   const response = await fetch(HANDOFF_REDEEM_URL, {
     method: 'POST',
@@ -323,7 +342,7 @@ export async function initAuth() {
     return ok
   }
 
-  if (isEmbedMode() && isEmbedRevenueRoute()) {
+  if (isEmbedMode() && isPublicEmbedRoute()) {
     return true
   }
 
@@ -390,11 +409,6 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const fineRevenueCount = computed(() => Number(revenueSummary.value?.fineRevenueCount || 0))
   const recentRevenue = computed(() => Array.isArray(revenueSummary.value?.recentRevenue) ? revenueSummary.value.recentRevenue : [])
 
-  async function loadTransactions() {
-    loading.value = true
-    try { const r = await apiFetch(`${CIRC_API}/transactions`); if (r.ok) transactions.value = await r.json() } catch {}
-    finally { loading.value = false }
-  }
   async function loadBooks() {
     try {
       const r = await apiFetch(CATALOG_API)
@@ -411,11 +425,16 @@ export const useLibrarianStore = defineStore('librarian', () => {
     }
   }
   async function loadFines() {
-    try { const r = await apiFetch(`${CIRC_API}/fines`); if (r.ok) fines.value = await r.json() } catch {}
+    try {
+      const basePath = isEmbedMode() ? `${CIRC_API}/fines/embed` : `${CIRC_API}/fines`
+      const r = await apiFetch(basePath)
+      if (r.ok) fines.value = await r.json()
+    } catch {}
   }
   async function loadPriceSettings() {
     try {
-      const r = await apiFetch(`${CIRC_API}/settings/prices`)
+      const basePath = isEmbedMode() ? `${CIRC_API}/settings/prices/embed` : `${CIRC_API}/settings/prices`
+      const r = await apiFetch(basePath)
       if (r.ok) priceSettings.value = await r.json()
       return priceSettings.value
     } catch {
@@ -457,6 +476,15 @@ export const useLibrarianStore = defineStore('librarian', () => {
       const r = await apiFetch(url)
       if (r.ok) revenueSummary.value = await r.json()
     } catch {}
+  }
+  async function loadTransactions() {
+    loading.value = true
+    try {
+      const basePath = isEmbedMode() ? `${CIRC_API}/transactions/embed` : `${CIRC_API}/transactions`
+      const r = await apiFetch(basePath)
+      if (r.ok) transactions.value = await r.json()
+    } catch {}
+    finally { loading.value = false }
   }
   async function approve(id) {
     const r = await apiFetch(`${CIRC_API}/transactions/${id}/approve`, { method: 'POST' })
@@ -535,6 +563,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
 
   return {
     books, transactions, fines, revenueSummary, priceSettings, loading,
+    embedMode: isEmbedMode(),
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,

@@ -156,6 +156,7 @@ import { message } from 'ant-design-vue'
 import { useLibrarianStore } from '@/stores/librarian'
 
 const libStore = useLibrarianStore()
+const embedMode = libStore.embedMode
 const filter = ref('all')
 const actionId = ref(null)
 const rejectDialog = ref(false)
@@ -165,16 +166,20 @@ const rejectForm = reactive({
   reason: ''
 })
 
-const columns = [
-  { title: 'Độc giả', key: 'reader', width: 240, sortable: false },
-  { title: 'Sách', key: 'book', width: 260, sortable: false },
-  { title: 'Số tiền', key: 'Amount', width: 120 },
-  { title: 'Lý do', key: 'Reason', width: 220 },
-  { title: 'Ngày tạo', key: 'CreatedAt', width: 150 },
-  { title: 'Yêu cầu lúc', key: 'PaymentRequestedAt', width: 150 },
-  { title: 'Trạng thái', key: 'PaymentStatus', width: 140 },
-  { title: 'Hành động', key: 'actions', width: 240, sortable: false }
-]
+const columns = computed(() => {
+  const baseColumns = [
+    { title: 'Độc giả', key: 'reader', width: 240, sortable: false },
+    { title: 'Sách', key: 'book', width: 260, sortable: false },
+    { title: 'Số tiền', key: 'Amount', width: 120 },
+    { title: 'Lý do', key: 'Reason', width: 220 },
+    { title: 'Ngày tạo', key: 'CreatedAt', width: 150 },
+    { title: 'Yêu cầu lúc', key: 'PaymentRequestedAt', width: 150 },
+    { title: 'Trạng thái', key: 'PaymentStatus', width: 140 }
+  ]
+
+  if (embedMode) return baseColumns
+  return [...baseColumns, { title: 'Hành động', key: 'actions', width: 240, sortable: false }]
+})
 
 const filteredFines = computed(() => {
   if (filter.value === 'all') return libStore.fines

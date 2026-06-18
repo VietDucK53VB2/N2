@@ -11,7 +11,8 @@
           </p>
           <div class="hero-tags">
             <a-tag color="green">Đồng bộ từ backend</a-tag>
-            <a-tag color="blue">Có thể chỉnh trực tiếp</a-tag>
+            <a-tag v-if="!embedMode" color="blue">Có thể chỉnh trực tiếp</a-tag>
+            <a-tag v-else color="gold">Chế độ nhúng công khai</a-tag>
             <a-tag color="gold">Áp dụng cho toàn hệ thống</a-tag>
           </div>
         </div>
@@ -62,6 +63,7 @@
                     v-model:value="form.monthlyBorrowLimit"
                     :min="1"
                     :max="100"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">cuốn / tháng</div>
@@ -73,6 +75,7 @@
                     v-model:value="form.borrowPricePerBook"
                     :min="0"
                     :step="1000"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">đ / cuốn</div>
@@ -87,6 +90,7 @@
                     v-model:value="form.dailyOverdueFine"
                     :min="0"
                     :step="1000"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">đ / ngày</div>
@@ -98,6 +102,7 @@
                     v-model:value="form.lightDamageFine"
                     :min="0"
                     :step="1000"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">đ / phiếu</div>
@@ -112,6 +117,7 @@
                     v-model:value="form.heavyDamageFine"
                     :min="0"
                     :step="5000"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">đ / phiếu</div>
@@ -123,6 +129,7 @@
                     v-model:value="form.lostFine"
                     :min="0"
                     :step="5000"
+                    :disabled="embedMode"
                     class="full-width"
                   />
                   <div class="field-unit">đ / phiếu</div>
@@ -133,7 +140,7 @@
             <div class="actions">
               <a-space :size="12" wrap>
                 <a-button :loading="loading" @click="reloadSettings">Làm mới</a-button>
-                <a-button type="primary" :loading="saving" @click="saveSettings">Lưu cấu hình</a-button>
+                <a-button v-if="!embedMode" type="primary" :loading="saving" @click="saveSettings">Lưu cấu hình</a-button>
               </a-space>
               <div class="helper-note">
                 Mức phí hư nặng và mất sách đang được để mặc định 100.000 đ nếu chưa cấu hình.
@@ -192,6 +199,7 @@ import { message } from 'ant-design-vue'
 import { useLibrarianStore } from '../stores/librarian'
 
 const store = useLibrarianStore()
+const embedMode = store.embedMode
 const loading = ref(false)
 const saving = ref(false)
 const lastSavedAt = ref('')

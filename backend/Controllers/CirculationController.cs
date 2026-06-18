@@ -895,149 +895,19 @@ public sealed class CirculationController : ControllerBase
             return Forbid();
         }
 
-        var query = _dbContext.BorrowTransactions.AsNoTracking();
+        return Ok(await BuildTransactionsListAsync(userId, cardNumber, activeOnly, pageSize, false, cancellationToken));
+    }
 
-        if (!IsStaffUser())
-        {
-            var tokenCardNumber = GetTokenCardNumber();
-            cardNumber = string.IsNullOrWhiteSpace(tokenCardNumber) ? requestedCardNumber : tokenCardNumber;
-        }
-
-        if (!string.IsNullOrWhiteSpace(userId))
-            query = query.Where(t => t.UserId == userId);
-        if (!string.IsNullOrWhiteSpace(cardNumber))
-            query = query.Where(t => t.CardNumber == cardNumber);
-        if (activeOnly == true)
-            query = query.Where(t => t.ReturnedAt == null && t.Status != "Pending");
-
-        var limit = Math.Clamp(pageSize ?? 100, 1, 200);
-        var result = await query
-            .OrderByDescending(t => t.BorrowedAt)
-            .Take(limit)
-            .Select(t => new {
-                t.Id,
-                t.BookId,
-                t.Isbn,
-                t.UserId,
-                t.CardNumber,
-                t.ReaderName,
-                t.ReaderUsername,
-                BorrowedAt = t.BorrowedAt,
-                DueAt = t.DueAt,
-                ReturnedAt = t.ReturnedAt,
-                FineAmount = t.FineAmount,
-                Status = t.Status == "Pending" ? "Pending" :
-                         t.Status == "ReturnPending" ? "ReturnPending" :
-                         t.Status == "RenewPending" ? "RenewPending" :
-                         t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
-                         t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
-            })
-            .ToListAsync(cancellationToken);
-
-        // Enrich with book metadata from Catalog API
-        var bookIds = result.Select(r => r.BookId).Distinct().ToList();
-        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
-        var cardNumbers = result
-            .Select(r => r.CardNumber)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var userRefs = result
-            .Select(r => r.UserId)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var userGuidRefs = userRefs
-            .Where(value => Guid.TryParse(value, out _))
-            .Select(value => Guid.Parse(value!))
-            .Distinct()
-            .ToList();
-
-        var transactionUsers = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user =>
-                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
-                userGuidRefs.Contains(user.Id) ||
-                userRefs.Contains(user.Username))
-            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
-            .ToListAsync(cancellationToken);
-
-        var usersByCard = transactionUsers
-            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
-            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
-        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
-        var cardsNeedingIdentity = result
-            .Where(r => string.IsNullOrWhiteSpace(r.ReaderName) &&
-                        !string.IsNullOrWhiteSpace(r.CardNumber) &&
-                        !usersByCard.ContainsKey(r.CardNumber))
-            .Select(r => r.CardNumber!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(cardsNeedingIdentity, cancellationToken);
-
-        var enriched = result.Select(r =>
-        {
-            books.TryGetValue(r.BookId, out var book);
-            var readerName = r.ReaderName ?? "";
-            var readerUsername = r.ReaderUsername ?? "";
-            if (!string.IsNullOrWhiteSpace(r.CardNumber) && usersByCard.TryGetValue(r.CardNumber, out var byCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byCard.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersById.TryGetValue(r.UserId, out var byId))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byId.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersByUsername.TryGetValue(r.UserId, out var byUsername))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byUsername.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.CardNumber) && identityUsersByCard.TryGetValue(r.CardNumber, out var byIdentityCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byIdentityCard.Username;
-            }
-
-            return (object)new {
-                r.Id,
-                r.BookId,
-                Isbn = r.Isbn ?? book?.Isbn ?? "",
-                r.UserId,
-                r.CardNumber,
-                ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
-                ReaderUsername = readerUsername,
-                BorrowedAt = ToIsoUtc(r.BorrowedAt),
-                DueAt = ToIsoUtc(r.DueAt),
-                ReturnedAt = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
-                createdAt = ToIsoUtc(r.BorrowedAt),
-                updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
-                requestDate = ToIsoUtc(r.BorrowedAt),
-                borrowDate = ToIsoUtc(r.BorrowedAt),
-                ngayMuon = ToIsoUtc(r.BorrowedAt),
-                returnDate = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
-                FineAmount = r.FineAmount,
-                Status = r.Status,
-                TenSach = book?.TenSach ?? "",
-                TacGia = book?.TacGia ?? "",
-                NhaSanXuat = book?.NhaSanXuat ?? "",
-                ImageUrl = book?.ImageUrl ?? ""
-            };
-        }).ToList();
-
-        return Ok(enriched);
+    [HttpGet("transactions/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetTransactionsEmbedAsync(
+        [FromQuery] string? userId,
+        [FromQuery] string? cardNumber,
+        [FromQuery] bool? activeOnly,
+        [FromQuery] int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await BuildTransactionsListAsync(userId, cardNumber, activeOnly, pageSize, true, cancellationToken));
     }
 
     [HttpGet("stats/monthly")]
@@ -1451,157 +1321,14 @@ public sealed class CirculationController : ControllerBase
     [Authorize]
     public async Task<ActionResult<IReadOnlyList<object>>> GetFinesAsync(CancellationToken cancellationToken)
     {
-        var finesQuery = _dbContext.FineCharges.AsNoTracking();
+        return Ok(await BuildFinesListAsync(false, cancellationToken));
+    }
 
-        if (!IsStaffUser())
-        {
-            var tokenCardNumber = GetTokenCardNumber();
-            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
-                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
-                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
-                ?? GetClaimValue("sub")
-                ?? GetClaimValue("id")
-                ?? GetClaimValue("userId");
-
-            finesQuery = finesQuery.Where(f =>
-                (!string.IsNullOrWhiteSpace(tokenCardNumber) && f.CardNumber == tokenCardNumber) ||
-                (!string.IsNullOrWhiteSpace(tokenUserId) && f.UserId == tokenUserId));
-        }
-
-        var fines = await finesQuery
-            .OrderByDescending(f => f.CreatedAt)
-            .ToListAsync(cancellationToken);
-
-        var transactionIds = fines
-            .Select(f => f.BorrowTransactionId)
-            .Distinct()
-            .ToList();
-
-        var relatedTransactions = transactionIds.Count == 0
-            ? new List<BorrowTransaction>()
-            : await _dbContext.BorrowTransactions
-                .AsNoTracking()
-                .Where(t => transactionIds.Contains(t.Id))
-                .Select(t => new BorrowTransaction
-                {
-                    Id = t.Id,
-                    BookId = t.BookId,
-                    Isbn = t.Isbn,
-                    UserId = t.UserId,
-                    CardNumber = t.CardNumber,
-                    ReaderName = t.ReaderName,
-                    ReaderUsername = t.ReaderUsername
-                })
-                .ToListAsync(cancellationToken);
-
-        var bookIds = relatedTransactions
-            .Select(t => t.BookId)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct()
-            .ToList();
-        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
-
-        var cardNumbers = fines
-            .Select(f => f.CardNumber)
-            .Concat(relatedTransactions.Select(t => t.CardNumber))
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var userRefs = fines
-            .Select(f => f.UserId)
-            .Concat(relatedTransactions.Select(t => t.UserId))
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var userGuidRefs = userRefs
-            .Where(value => Guid.TryParse(value, out _))
-            .Select(value => Guid.Parse(value!))
-            .Distinct()
-            .ToList();
-
-        var transactionUsers = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user =>
-                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
-                userGuidRefs.Contains(user.Id) ||
-                userRefs.Contains(user.Username))
-            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
-            .ToListAsync(cancellationToken);
-
-        var usersByCard = transactionUsers
-            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
-            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
-        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
-
-        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(
-            cardNumbers.Where(value => !usersByCard.ContainsKey(value)).ToList(),
-            cancellationToken);
-
-        var result = fines.Select(f =>
-        {
-            var transaction = relatedTransactions.FirstOrDefault(t => t.Id == f.BorrowTransactionId);
-            books.TryGetValue(transaction?.BookId ?? string.Empty, out var book);
-
-            var readerName = transaction?.ReaderName ?? "";
-            var readerUsername = transaction?.ReaderUsername ?? "";
-            var lookupCard = transaction?.CardNumber ?? f.CardNumber;
-
-            if (!string.IsNullOrWhiteSpace(lookupCard) && usersByCard.TryGetValue(lookupCard, out var byCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byCard.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersById.TryGetValue(f.UserId, out var byId))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byId.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersByUsername.TryGetValue(f.UserId, out var byUsername))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byUsername.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(lookupCard) && identityUsersByCard.TryGetValue(lookupCard, out var byIdentityCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byIdentityCard.Username;
-            }
-
-            return new
-            {
-                f.Id,
-                f.BorrowTransactionId,
-                f.UserId,
-                f.CardNumber,
-                ReaderName = string.IsNullOrWhiteSpace(readerName) ? f.CardNumber ?? f.UserId ?? "" : readerName,
-                ReaderUsername = readerUsername,
-                BookId = transaction?.BookId ?? "",
-                TenSach = book?.TenSach ?? "",
-                TacGia = book?.TacGia ?? "",
-                f.Amount,
-                f.Reason,
-                f.CreatedAt,
-                f.PaymentStatus,
-                f.PaymentRequestedAt,
-                f.PaidAt,
-                IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
-                IsPaymentPending = f.PaymentStatus == "PendingApproval"
-            };
-        }).ToList();
-
-        return Ok(result);
+    [HttpGet("fines/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetFinesEmbedAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await BuildFinesListAsync(true, cancellationToken));
     }
 
     [HttpPost("fines/{id}/request-payment")]
@@ -1998,16 +1725,14 @@ public sealed class CirculationController : ControllerBase
     [Authorize]
     public async Task<ActionResult<object>> GetPricePolicySettingsAsync(CancellationToken cancellationToken)
     {
-        var policy = await GetPricePolicyAsync(cancellationToken);
-        return Ok(new
-        {
-            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
-            borrowPricePerBook = policy.BorrowPricePerBook,
-            dailyOverdueFine = policy.DailyOverdueFine,
-            lightDamageFine = policy.LightDamageFine,
-            heavyDamageFine = policy.HeavyDamageFine,
-            lostFine = policy.LostFine
-        });
+        return Ok(await BuildPricePolicySettingsAsync(cancellationToken));
+    }
+
+    [HttpGet("settings/prices/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<object>> GetPricePolicySettingsEmbedAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await BuildPricePolicySettingsAsync(cancellationToken));
     }
 
     [HttpPut("settings/prices")]
@@ -3604,6 +3329,323 @@ public sealed class CirculationController : ControllerBase
             borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
             fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
             recentRevenue
+        };
+    }
+
+    private async Task<IReadOnlyList<object>> BuildTransactionsListAsync(
+        string? userId,
+        string? cardNumber,
+        bool? activeOnly,
+        int? pageSize,
+        bool publicEmbed,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.BorrowTransactions.AsNoTracking();
+
+        if (!publicEmbed && !IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            cardNumber = string.IsNullOrWhiteSpace(tokenCardNumber) ? cardNumber : tokenCardNumber;
+        }
+
+        if (!string.IsNullOrWhiteSpace(userId))
+            query = query.Where(t => t.UserId == userId);
+        if (!string.IsNullOrWhiteSpace(cardNumber))
+            query = query.Where(t => t.CardNumber == cardNumber);
+        if (activeOnly == true)
+            query = query.Where(t => t.ReturnedAt == null && t.Status != "Pending");
+
+        var limit = Math.Clamp(pageSize ?? 100, 1, 200);
+        var result = await query
+            .OrderByDescending(t => t.BorrowedAt)
+            .Take(limit)
+            .Select(t => new {
+                t.Id,
+                t.BookId,
+                t.Isbn,
+                t.UserId,
+                t.CardNumber,
+                t.ReaderName,
+                t.ReaderUsername,
+                BorrowedAt = t.BorrowedAt,
+                DueAt = t.DueAt,
+                ReturnedAt = t.ReturnedAt,
+                FineAmount = t.FineAmount,
+                Status = t.Status == "Pending" ? "Pending" :
+                         t.Status == "ReturnPending" ? "ReturnPending" :
+                         t.Status == "RenewPending" ? "RenewPending" :
+                         t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
+                         t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
+            })
+            .ToListAsync(cancellationToken);
+
+        var bookIds = result.Select(r => r.BookId).Distinct().ToList();
+        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
+        var cardNumbers = result
+            .Select(r => r.CardNumber)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var userRefs = result
+            .Select(r => r.UserId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var userGuidRefs = userRefs
+            .Where(value => Guid.TryParse(value, out _))
+            .Select(value => Guid.Parse(value!))
+            .Distinct()
+            .ToList();
+
+        var transactionUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
+                userGuidRefs.Contains(user.Id) ||
+                userRefs.Contains(user.Username))
+            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
+            .ToListAsync(cancellationToken);
+
+        var usersByCard = transactionUsers
+            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
+            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
+        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
+        var cardsNeedingIdentity = result
+            .Where(r => string.IsNullOrWhiteSpace(r.ReaderName) &&
+                        !string.IsNullOrWhiteSpace(r.CardNumber) &&
+                        !usersByCard.ContainsKey(r.CardNumber))
+            .Select(r => r.CardNumber!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(cardsNeedingIdentity, cancellationToken);
+
+        return result.Select(r =>
+        {
+            books.TryGetValue(r.BookId, out var book);
+            var readerName = r.ReaderName ?? "";
+            var readerUsername = r.ReaderUsername ?? "";
+            if (!string.IsNullOrWhiteSpace(r.CardNumber) && usersByCard.TryGetValue(r.CardNumber, out var byCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byCard.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersById.TryGetValue(r.UserId, out var byId))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byId.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersByUsername.TryGetValue(r.UserId, out var byUsername))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byUsername.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.CardNumber) && identityUsersByCard.TryGetValue(r.CardNumber, out var byIdentityCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byIdentityCard.Username;
+            }
+
+            return (object)new {
+                r.Id,
+                r.BookId,
+                Isbn = r.Isbn ?? book?.Isbn ?? "",
+                r.UserId,
+                r.CardNumber,
+                ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
+                ReaderUsername = readerUsername,
+                BorrowedAt = ToIsoUtc(r.BorrowedAt),
+                DueAt = ToIsoUtc(r.DueAt),
+                ReturnedAt = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
+                createdAt = ToIsoUtc(r.BorrowedAt),
+                updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
+                requestDate = ToIsoUtc(r.BorrowedAt),
+                borrowDate = ToIsoUtc(r.BorrowedAt),
+                ngayMuon = ToIsoUtc(r.BorrowedAt),
+                returnDate = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
+                FineAmount = r.FineAmount,
+                Status = r.Status,
+                TenSach = book?.TenSach ?? "",
+                TacGia = book?.TacGia ?? "",
+                NhaSanXuat = book?.NhaSanXuat ?? "",
+                ImageUrl = book?.ImageUrl ?? ""
+            };
+        }).ToList();
+    }
+
+    private async Task<IReadOnlyList<object>> BuildFinesListAsync(bool publicEmbed, CancellationToken cancellationToken)
+    {
+        var finesQuery = _dbContext.FineCharges.AsNoTracking();
+
+        if (!publicEmbed && !IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
+                ?? GetClaimValue("sub")
+                ?? GetClaimValue("id")
+                ?? GetClaimValue("userId");
+
+            finesQuery = finesQuery.Where(f =>
+                (!string.IsNullOrWhiteSpace(tokenCardNumber) && f.CardNumber == tokenCardNumber) ||
+                (!string.IsNullOrWhiteSpace(tokenUserId) && f.UserId == tokenUserId));
+        }
+
+        var fines = await finesQuery
+            .OrderByDescending(f => f.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var transactionIds = fines
+            .Select(f => f.BorrowTransactionId)
+            .Distinct()
+            .ToList();
+
+        var relatedTransactions = transactionIds.Count == 0
+            ? new List<BorrowTransaction>()
+            : await _dbContext.BorrowTransactions
+                .AsNoTracking()
+                .Where(t => transactionIds.Contains(t.Id))
+                .Select(t => new BorrowTransaction
+                {
+                    Id = t.Id,
+                    BookId = t.BookId,
+                    Isbn = t.Isbn,
+                    UserId = t.UserId,
+                    CardNumber = t.CardNumber,
+                    ReaderName = t.ReaderName,
+                    ReaderUsername = t.ReaderUsername
+                })
+                .ToListAsync(cancellationToken);
+
+        var bookIds = relatedTransactions
+            .Select(t => t.BookId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct()
+            .ToList();
+        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
+
+        var cardNumbers = fines
+            .Select(f => f.CardNumber)
+            .Concat(relatedTransactions.Select(t => t.CardNumber))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userRefs = fines
+            .Select(f => f.UserId)
+            .Concat(relatedTransactions.Select(t => t.UserId))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userGuidRefs = userRefs
+            .Where(value => Guid.TryParse(value, out _))
+            .Select(value => Guid.Parse(value!))
+            .Distinct()
+            .ToList();
+
+        var transactionUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
+                userGuidRefs.Contains(user.Id) ||
+                userRefs.Contains(user.Username))
+            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
+            .ToListAsync(cancellationToken);
+
+        var usersByCard = transactionUsers
+            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
+            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
+        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
+
+        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(
+            cardNumbers.Where(value => !usersByCard.ContainsKey(value)).ToList(),
+            cancellationToken);
+
+        return fines.Select(f =>
+        {
+            var transaction = relatedTransactions.FirstOrDefault(t => t.Id == f.BorrowTransactionId);
+            books.TryGetValue(transaction?.BookId ?? string.Empty, out var book);
+
+            var readerName = transaction?.ReaderName ?? "";
+            var readerUsername = transaction?.ReaderUsername ?? "";
+            var lookupCard = transaction?.CardNumber ?? f.CardNumber;
+
+            if (!string.IsNullOrWhiteSpace(lookupCard) && usersByCard.TryGetValue(lookupCard, out var byCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byCard.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersById.TryGetValue(f.UserId, out var byId))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byId.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersByUsername.TryGetValue(f.UserId, out var byUsername))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byUsername.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(lookupCard) && identityUsersByCard.TryGetValue(lookupCard, out var byIdentityCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byIdentityCard.Username;
+            }
+
+            return new
+            {
+                f.Id,
+                f.BorrowTransactionId,
+                f.UserId,
+                f.CardNumber,
+                ReaderName = string.IsNullOrWhiteSpace(readerName) ? f.CardNumber ?? f.UserId ?? "" : readerName,
+                ReaderUsername = readerUsername,
+                BookId = transaction?.BookId ?? "",
+                TenSach = book?.TenSach ?? "",
+                TacGia = book?.TacGia ?? "",
+                f.Amount,
+                f.Reason,
+                f.CreatedAt,
+                f.PaymentStatus,
+                f.PaymentRequestedAt,
+                f.PaidAt,
+                IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
+                IsPaymentPending = f.PaymentStatus == "PendingApproval"
+            };
+        }).ToList();
+    }
+
+    private async Task<object> BuildPricePolicySettingsAsync(CancellationToken cancellationToken)
+    {
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return new
+        {
+            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
+            borrowPricePerBook = policy.BorrowPricePerBook,
+            dailyOverdueFine = policy.DailyOverdueFine,
+            lightDamageFine = policy.LightDamageFine,
+            heavyDamageFine = policy.HeavyDamageFine,
+            lostFine = policy.LostFine
         };
     }
 
