@@ -279,6 +279,21 @@ app.Use(async (context, next) =>
         }
     }
 
+    // SPA fallback for the reader UI.
+    if (path.StartsWith("/ui/reader", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "reader", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
+    }
+
     await next();
 });
 
