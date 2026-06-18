@@ -405,6 +405,9 @@ function readEmbedMode() {
   const search = new URLSearchParams(window.location.search)
   if (search.get('embed') === '1' || search.get('embed') === 'true') return true
 
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/')) return true
+
   const hash = window.location.hash || ''
   if (!hash) return false
 
@@ -417,7 +420,9 @@ function readEmbedMode() {
 
 const isEmbedMode = ref(readEmbedMode())
 const showChrome = computed(() =>
-  window.location.pathname.startsWith('/ui/librarian/') && !isEmbedMode.value
+  window.location.pathname.startsWith('/ui/librarian/') &&
+  !route.path.startsWith('/embed/') &&
+  !isEmbedMode.value
 )
 function syncEmbedMode() {
   isEmbedMode.value = readEmbedMode()

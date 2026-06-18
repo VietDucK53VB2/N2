@@ -250,6 +250,9 @@ function isEmbedMode() {
     const search = new URLSearchParams(window.location.search)
     if (search.get('embed') === '1' || search.get('embed') === 'true') return true
 
+    const pathname = window.location.pathname || ''
+    if (pathname.startsWith('/ui/librarian/embed/')) return true
+
     const hash = window.location.hash || ''
     const idx = hash.indexOf('?')
     if (idx === -1) return false
@@ -262,21 +265,33 @@ function isEmbedMode() {
 }
 
 function isEmbedRevenueRoute() {
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/revenue')) return true
+
   const hash = window.location.hash || ''
   return hash.includes('/finance/revenue')
 }
 
 function isEmbedLoansRoute() {
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/loans')) return true
+
   const hash = window.location.hash || ''
   return hash.includes('/loans')
 }
 
 function isEmbedFinesRoute() {
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/fines')) return true
+
   const hash = window.location.hash || ''
   return hash.includes('/fines')
 }
 
 function isEmbedPricesRoute() {
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/prices')) return true
+
   const hash = window.location.hash || ''
   return hash.includes('/finance/prices')
 }

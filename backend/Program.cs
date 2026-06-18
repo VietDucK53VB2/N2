@@ -244,23 +244,6 @@ app.Use(async (context, next) =>
         return;
     }
 
-    // /ui/{role}/ -> wwwroot/ui/{role}/index.html
-
-    var segments = path.Trim('/').Split('/');
-    if (segments.Length == 2)
-    {
-        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", segments[0], segments[1], "index.html");
-        if (File.Exists(indexPath))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(indexPath);
-            return;
-        }
-    }
-
     // Try direct file
     var cleanPath = path.TrimStart('/');
     var directPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", cleanPath);
@@ -279,6 +262,21 @@ app.Use(async (context, next) =>
         context.Response.ContentType = ct;
         await context.Response.SendFileAsync(directPath);
         return;
+    }
+
+    // SPA fallback for the librarian UI, including embedded public routes.
+    if (path.StartsWith("/ui/librarian", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "librarian", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
     }
 
     await next();
