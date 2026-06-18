@@ -21,7 +21,7 @@ public sealed class HomeController : ControllerBase
     public IActionResult Login()
     {
         var query = Request.QueryString.HasValue ? Request.QueryString.Value : string.Empty;
-        return Redirect($"http://163.223.210.87/login{query}");
+        return Redirect($"http://163.223.210.87:5082/login{query}");
     }
 
     [HttpGet("/ui/librarian/ping")]
