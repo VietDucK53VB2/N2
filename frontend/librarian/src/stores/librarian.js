@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
-const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, ':5082')}/login`
+const N3_LOGIN_URL = 'http://163.223.210.87/login'
 const HANDOFF_REDEEM_URLS = [
   `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`,
   `${window.location.origin}/api/identity/Auth/handoff/redeem`,

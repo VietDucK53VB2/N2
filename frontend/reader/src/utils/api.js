@@ -1,5 +1,5 @@
 const ID3_API = `${window.location.origin.replace(/:\d+$/, ':5001')}`
-const N3_LOGIN_URL = `${window.location.origin.replace(/:\d+$/, ':5082')}/login`
+const N3_LOGIN_URL = 'http://163.223.210.87/login'
 const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
