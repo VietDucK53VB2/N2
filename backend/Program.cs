@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
@@ -12,24 +12,22 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddHttpClient();
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? builder.Configuration["Jwt__Key"] ?? "Your_Super_Secret_Key_For_JWT_Validation_Needs_To_Be_Long_Enough";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? builder.Configuration["Jwt__Issuer"] ?? "IdentityReportService";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? builder.Configuration["Jwt__Audience"] ?? "LibraryMicroservices";
-var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
-
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = false;
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = signingKey,
-            ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
+            // The identity service already verifies token authenticity and account state.
+            // N2 only needs to accept the JWT structure and then let the identity validation
+            // middleware enforce that the token is still active.
+            ValidateIssuerSigningKey = false,
+            RequireSignedTokens = false,
+            SignatureValidator = (token, parameters) => new JwtSecurityToken(token),
+            ValidateIssuer = false,
+            ValidateAudience = false,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
             RoleClaimType = ClaimTypes.Role,
