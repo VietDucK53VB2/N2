@@ -2635,12 +2635,18 @@ public sealed class CirculationController : ControllerBase
 
         foreach (var item in first.Concat(second))
         {
-            var key = GetReviewDedupKey(item);
-
-            if (seen.Add(key))
+            var keys = GetReviewDedupKeys(item).ToList();
+            if (keys.Any(key => seen.Contains(key)))
             {
-                merged.Add(item);
+                continue;
             }
+
+            foreach (var key in keys)
+            {
+                seen.Add(key);
+            }
+
+            merged.Add(item);
         }
 
         return merged;
@@ -3727,40 +3733,56 @@ public sealed class CirculationController : ControllerBase
 
         foreach (var review in reviews)
         {
-            var key = GetReviewDedupKey(review);
-            if (seen.Add(key))
+            var keys = GetReviewDedupKeys(review).ToList();
+            if (keys.Any(key => seen.Contains(key)))
             {
-                unique.Add(review);
+                continue;
             }
+
+            foreach (var key in keys)
+            {
+                seen.Add(key);
+            }
+
+            unique.Add(review);
         }
 
         return unique;
     }
 
-    private static string GetReviewDedupKey(ReviewDto item)
+    private static IEnumerable<string> GetReviewDedupKeys(ReviewDto item)
     {
         if (item.TransactionId is not null && item.TransactionId != Guid.Empty)
         {
-            return $"tx:{item.TransactionId.Value:D}";
+            yield return $"tx:{item.TransactionId.Value:D}";
         }
 
         if (item.ReviewId != Guid.Empty)
         {
-            return $"review:{item.ReviewId:D}";
+            yield return $"review:{item.ReviewId:D}";
         }
 
         if (!string.IsNullOrWhiteSpace(item.Id))
         {
-            return $"id:{item.Id}";
+            yield return $"id:{item.Id}";
         }
 
-        return string.Join("|",
+        yield return string.Join("|",
             item.BookId,
             item.UserId ?? string.Empty,
             item.CardNumber ?? string.Empty,
+            item.Username ?? string.Empty,
+            item.FullName ?? string.Empty,
             item.Rating,
             item.Comment ?? string.Empty,
-            item.CreatedAt.ToUniversalTime().ToString("O"));
+            NormalizeReviewCreatedAt(item.CreatedAt));
+    }
+
+    private static string NormalizeReviewCreatedAt(DateTimeOffset createdAt)
+    {
+        return createdAt == DateTimeOffset.MinValue
+            ? string.Empty
+            : createdAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
     }
 
     private sealed class ReviewDto

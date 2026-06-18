@@ -212,7 +212,7 @@ const durationSummary = computed(() => {
 function mapReview(review = {}) {
   const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
   return {
-    reviewKey: buildReviewKey(review),
+    reviewKey: buildReviewKey(review).join('||'),
     initials: String(fullName).split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2) || 'DG',
     name: fullName,
     rating: Number(review.rating ?? review.Rating ?? 0),
@@ -222,17 +222,30 @@ function mapReview(review = {}) {
 }
 
 function buildReviewKey(review = {}) {
+  const keys = []
   const transactionId = review.transactionId || review.TransactionId
-  if (transactionId) return `tx:${transactionId}`
+  if (transactionId) keys.push(`tx:${transactionId}`)
 
   const reviewId = review.reviewId || review.ReviewId
-  if (reviewId) return `review:${reviewId}`
+  if (reviewId) keys.push(`review:${reviewId}`)
 
   const id = review.id || review.Id
-  if (id) return `id:${id}`
+  if (id) keys.push(`id:${id}`)
 
   const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
-  return `${fullName}-${review.createdAt || review.CreatedAt || review.comment || review.Comment || Math.random()}`
+  const createdAt = review.createdAt || review.CreatedAt
+  const normalizedCreatedAt = createdAt ? new Date(createdAt).toISOString().slice(0, 19) : ''
+  keys.push([
+    review.bookId || review.BookId || '',
+    review.userId || review.UserId || '',
+    review.cardNumber || review.CardNumber || '',
+    review.username || review.Username || '',
+    fullName,
+    review.rating ?? review.Rating ?? '',
+    review.comment || review.Comment || '',
+    normalizedCreatedAt
+  ].join('|'))
+  return keys
 }
 
 function dedupeReviews(list = []) {
@@ -240,9 +253,9 @@ function dedupeReviews(list = []) {
   const unique = []
 
   for (const review of list) {
-    const key = buildReviewKey(review)
-    if (seen.has(key)) continue
-    seen.add(key)
+    const keys = buildReviewKey(review)
+    if (keys.some(key => seen.has(key))) continue
+    keys.forEach(key => seen.add(key))
     unique.push(review)
   }
 
