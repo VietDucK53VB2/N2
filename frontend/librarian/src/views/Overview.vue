@@ -161,7 +161,7 @@ import {
   BookOutlined,
   WarningOutlined
 } from '@ant-design/icons-vue'
-import { getLibrarianToken, useLibrarianStore } from '@/stores/librarian'
+import { useLibrarianStore } from '@/stores/librarian'
 
 const store = useLibrarianStore()
 const catalogBooks = ref([])
@@ -181,7 +181,7 @@ const palette = [
 ]
 
 function token() {
-  return getLibrarianToken() || ''
+  return localStorage.getItem('authToken') || localStorage.getItem('token') || ''
 }
 
 function headers() {
