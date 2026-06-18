@@ -163,7 +163,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useLibrarianStore } from '@/stores/librarian'
+import { clearLibrarianAuth, getLibrarianToken, getLibrarianUserInfo, useLibrarianStore } from '@/stores/librarian'
 import {
   DashboardOutlined,
   FileTextOutlined,
@@ -188,12 +188,7 @@ const sessionUserInfo = ref(readSessionUserInfo())
 const accountModalVisible = ref(false)
 
 function readStoredUserInfo() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
+  return getLibrarianUserInfo()
 }
 
 function parseJwt(token) {
@@ -210,7 +205,7 @@ function parseJwt(token) {
 }
 
 function readTokenInfo() {
-  const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+  const token = getLibrarianToken()
   return token ? (parseJwt(token) || {}) : {}
 }
 
@@ -445,7 +440,7 @@ async function onToolbarMenuClick({ key }) {
 }
 
 function doLogout() {
-  localStorage.clear()
+  clearLibrarianAuth()
   window.location.href = window.location.origin.replace(/:\d+$/, '') + '/login'
 }
 
