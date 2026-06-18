@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ensureLibrarianTabAccess, initAuth } from './stores/librarian'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory('/ui/librarian/'),
   routes: [
     {
@@ -23,3 +24,21 @@ export default createRouter({
     }
   ]
 })
+
+router.beforeEach(async () => {
+  const authenticated = await initAuth()
+  if (!authenticated) {
+    window.location.href = `${window.location.origin.replace(/:\d+$/, '')}/login`
+    return false
+  }
+
+  const allowed = await ensureLibrarianTabAccess()
+  if (!allowed) {
+    window.location.href = `${window.location.origin.replace(/:\d+$/, '')}/login`
+    return false
+  }
+
+  return true
+})
+
+export default router
