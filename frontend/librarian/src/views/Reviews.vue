@@ -157,7 +157,14 @@ const reviewRows = computed(() => {
         rating: Number(review.rating ?? review.Rating ?? 0),
         comment: review.comment || review.Comment || '',
         createdAt,
-        reviewKey: buildReviewKey(review, bookId)
+        reviewKey: buildReviewKey(review, bookId),
+        reviewId: review.reviewId || review.ReviewId || '',
+        transactionId: review.transactionId || review.TransactionId || '',
+        id: review.id || review.Id || '',
+        userId: review.userId || review.UserId || '',
+        cardNumber: review.cardNumber || review.CardNumber || '',
+        username: review.username || review.Username || '',
+        fullName: review.fullName || review.FullName || ''
       }
     })
   })
@@ -238,7 +245,21 @@ async function deleteReview(record) {
         headers: {
           'Content-Type': 'application/json',
           ...(localStorage.getItem('authToken') ? { Authorization: `Bearer ${localStorage.getItem('authToken')}` } : {})
-        }
+        },
+        body: JSON.stringify({
+          BookId: record.bookId,
+          Id: record.id || undefined,
+          ReviewId: record.reviewId || undefined,
+          TransactionId: record.transactionId || undefined,
+          UserId: record.userId || undefined,
+          CardNumber: record.cardNumber || undefined,
+          Username: record.username || undefined,
+          FullName: record.fullName || undefined,
+          Rating: record.rating,
+          Comment: record.comment || '',
+          CreatedAt: normalizeReviewCreatedAt(record.createdAt) || record.createdAt || undefined,
+          ReviewKey: reviewKey
+        })
       }
     )
 
@@ -288,8 +309,17 @@ function buildReviewKey(review = {}, bookId = '') {
     String(reviewerName || '').trim(),
     String(review.rating ?? review.Rating ?? '').trim(),
     String(review.comment || review.Comment || '').trim(),
-    createdAt ? new Date(createdAt).toISOString().slice(0, 19) : ''
+    normalizeReviewCreatedAt(createdAt)
   ].join('|')
+}
+
+function normalizeReviewCreatedAt(value) {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 function fmtDate(value) {

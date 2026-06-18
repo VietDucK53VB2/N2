@@ -1630,6 +1630,7 @@ public sealed class CirculationController : ControllerBase
     public async Task<ActionResult> DeleteReviewAsync(
         string bookId,
         string reviewKey,
+        [FromBody] ReviewDeleteRequest? request,
         CancellationToken cancellationToken)
     {
         var requestedBookId = bookId.Trim();
@@ -1643,7 +1644,9 @@ public sealed class CirculationController : ControllerBase
         var reviews = await GetLocalBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
         var catalogReviews = await GetCatalogBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
         var review = MergeReviews(catalogReviews, reviews)
-            .FirstOrDefault(item => MatchesReviewKey(item, requestedReviewKey));
+            .FirstOrDefault(item =>
+                MatchesReviewKey(item, requestedReviewKey) ||
+                MatchesReviewRequest(item, request, requestedBookId, requestedReviewKey));
 
         if (review is null)
         {
@@ -2443,6 +2446,94 @@ public sealed class CirculationController : ControllerBase
         }
 
         return false;
+    }
+
+    private static bool MatchesReviewRequest(ReviewDto review, ReviewDeleteRequest? request, string bookId, string reviewKey)
+    {
+        if (request is null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(review.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReviewId) &&
+            Guid.TryParse(request.ReviewId, out var reviewId) &&
+            review.ReviewId == reviewId)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TransactionId) &&
+            Guid.TryParse(request.TransactionId, out var transactionId) &&
+            review.TransactionId == transactionId)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Id) &&
+            string.Equals(review.Id, request.Id.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var requestFingerprint = string.Join("|",
+            request.BookId ?? bookId,
+            request.UserId ?? string.Empty,
+            request.CardNumber ?? string.Empty,
+            request.Username ?? string.Empty,
+            request.FullName ?? string.Empty,
+            request.Rating,
+            request.Comment ?? string.Empty,
+            TryNormalizeReviewCreatedAt(request.CreatedAt));
+
+        var legacyRequestFingerprint = requestFingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+            ? requestFingerprint[..^1]
+            : requestFingerprint;
+
+        if (string.Equals(reviewKey, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reviewKey, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var reviewFingerprint = GetReviewFingerprint(review);
+        var legacyReviewFingerprint = reviewFingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+            ? reviewFingerprint[..^1]
+            : reviewFingerprint;
+
+        return string.Equals(reviewFingerprint, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(reviewFingerprint, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(legacyReviewFingerprint, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(legacyReviewFingerprint, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetReviewFingerprint(ReviewDto item)
+    {
+        return string.Join("|",
+            item.BookId,
+            item.UserId ?? string.Empty,
+            item.CardNumber ?? string.Empty,
+            item.Username ?? string.Empty,
+            item.FullName ?? string.Empty,
+            item.Rating,
+            item.Comment ?? string.Empty,
+            NormalizeReviewCreatedAt(item.CreatedAt));
+    }
+
+    private static string TryNormalizeReviewCreatedAt(string? createdAt)
+    {
+        if (string.IsNullOrWhiteSpace(createdAt))
+        {
+            return string.Empty;
+        }
+
+        return DateTimeOffset.TryParse(createdAt, out var parsed)
+            ? NormalizeReviewCreatedAt(parsed)
+            : string.Empty;
     }
 
     private async Task<List<ReviewDto>> EnrichReviewAuthorsAsync(IEnumerable<ReviewDto> reviews, CancellationToken cancellationToken)
@@ -4056,15 +4147,16 @@ public sealed class CirculationController : ControllerBase
             yield return $"id:{item.Id.Trim()}";
         }
 
-        yield return string.Join("|",
-            item.BookId,
-            item.UserId ?? string.Empty,
-            item.CardNumber ?? string.Empty,
-            item.Username ?? string.Empty,
-            item.FullName ?? string.Empty,
-            item.Rating,
-            item.Comment ?? string.Empty,
-            NormalizeReviewCreatedAt(item.CreatedAt));
+        var fingerprint = GetReviewFingerprint(item);
+        if (!string.IsNullOrWhiteSpace(fingerprint))
+        {
+            yield return fingerprint;
+
+            if (fingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return fingerprint[..^1];
+            }
+        }
     }
 
     private static string NormalizeReviewCreatedAt(DateTimeOffset createdAt)
@@ -4088,6 +4180,21 @@ public sealed class CirculationController : ControllerBase
         public int Rating { get; init; }
         public string Comment { get; init; } = string.Empty;
         public DateTimeOffset CreatedAt { get; init; }
+    }
+
+    public sealed class ReviewDeleteRequest
+    {
+        public string? BookId { get; init; }
+        public string? Id { get; init; }
+        public string? ReviewId { get; init; }
+        public string? TransactionId { get; init; }
+        public string? UserId { get; init; }
+        public string? CardNumber { get; init; }
+        public string? Username { get; init; }
+        public string? FullName { get; init; }
+        public int Rating { get; init; }
+        public string? Comment { get; init; }
+        public string? CreatedAt { get; init; }
     }
 
     private sealed record CatalogUpdateResult(bool IsSuccess, int StatusCode, string Message)
