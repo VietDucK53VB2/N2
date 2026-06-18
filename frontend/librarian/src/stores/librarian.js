@@ -7,7 +7,7 @@ const N3_LOGIN_URL = `${window.location.origin}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 const LIBRARIAN_AUTH_KEYS = ['authToken', 'token', 'readerCard', 'role', 'userInfo']
 const LIBRARIAN_TAB_CHANNEL = 'librarian-tab-lock'
-const LIBRARIAN_TAB_PROBE_TIMEOUT_MS = 250
+const LIBRARIAN_TAB_PROBE_TIMEOUT_MS = 1000
 
 let librarianTabChannel = null
 let librarianTabListenerReady = false
