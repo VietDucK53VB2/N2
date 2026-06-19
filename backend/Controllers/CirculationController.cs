@@ -1069,7 +1069,7 @@ public sealed class CirculationController : ControllerBase
             var key = (month.Year, month.Month);
             return new
             {
-                month = month.ToString("MMM", CultureInfo.InvariantCulture),
+                month = month.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 borrows = borrowTrendLookup.TryGetValue(key, out var borrowCount) ? borrowCount : 0,
                 returns = returnTrendLookup.TryGetValue(key, out var returnCount) ? returnCount : 0
             };
