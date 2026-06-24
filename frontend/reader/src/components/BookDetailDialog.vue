@@ -3,8 +3,19 @@
     <v-card v-if="book" rounded="xl" class="overflow-hidden">
       <div class="detail-hero" :style="heroBg">
         <div class="hero-overlay"></div>
-        <v-btn class="favorite-btn" icon variant="flat" size="small">
-          <v-icon size="20">mdi-heart-outline</v-icon>
+        <v-btn
+          class="favorite-btn"
+          :class="{ 'is-favorite': store.isFavorite(book.id) }"
+          icon
+          variant="flat"
+          size="small"
+          type="button"
+          :ripple="false"
+          @click.stop.prevent="handleToggleFavorite"
+        >
+          <v-icon size="20" :color="store.isFavorite(book.id) ? 'pink' : 'grey-darken-1'">
+            {{ store.isFavorite(book.id) ? 'mdi-heart' : 'mdi-heart-outline' }}
+          </v-icon>
         </v-btn>
 
         <div class="hero-content">
@@ -15,8 +26,12 @@
 
           <div class="flex-grow-1">
             <div class="d-flex ga-2 mb-2 flex-wrap">
-              <v-chip size="small" :color="book.soBanConLai > 0 ? 'success' : 'error'" variant="flat">
-                {{ book.soBanConLai > 0 ? `Còn ${book.soBanConLai} quyển` : 'Hết bản' }}
+              <v-chip size="small" :color="canBorrowBook(book) ? 'success' : 'error'" variant="flat">
+                {{ canBorrowBook(book) ? `Còn ${book.soBanConLai} quyển` : (book.trangThai || 'Hết bản') }}
+              </v-chip>
+              <v-chip v-if="book.trangThai" size="small" color="primary" variant="tonal">{{ book.trangThai }}</v-chip>
+              <v-chip v-if="book.danhGiaTrungBinh" size="small" color="amber" variant="tonal">
+                <v-icon start size="12">mdi-star</v-icon>{{ Number(book.danhGiaTrungBinh).toFixed(1) }}/5
               </v-chip>
               <v-chip v-if="borrowCount" size="small" color="deep-orange" variant="flat">
                 <v-icon start size="12">mdi-fire</v-icon>{{ borrowCount }} lượt mượn
@@ -25,6 +40,7 @@
             <h2 class="text-h5 font-weight-black text-white mb-1">{{ book.tenSach }}</h2>
             <p class="text-body-2 text-white-70"><v-icon size="14">mdi-account-edit</v-icon> {{ book.tacGia }}</p>
             <p v-if="book.nhaSanXuat" class="text-caption text-white-50"><v-icon size="12">mdi-domain</v-icon> {{ book.nhaSanXuat }}</p>
+            <p v-if="book.theLoai" class="text-caption text-white-50"><v-icon size="12">mdi-tag-outline</v-icon> {{ book.theLoai }}</p>
             <p v-if="book.isbn" class="text-caption text-white-50"><v-icon size="12">mdi-barcode</v-icon> ISBN: {{ book.isbn }}</p>
           </div>
         </div>
@@ -39,26 +55,32 @@
           <v-icon size="16" color="primary">mdi-text</v-icon> Tóm tắt nội dung
         </h4>
         <p class="text-body-2 text-grey">
-          {{ book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
+          {{ book.tomTat || book.moTa || `"${book.tenSach}" là một trong những cuốn sách được độc giả yêu thích.` }}
         </p>
 
         <div class="reviews-panel mt-5">
           <div class="d-flex align-center justify-space-between mb-3">
             <div>
               <h4 class="text-subtitle-2 font-weight-bold mb-1">Đánh giá độc giả</h4>
-              <p class="text-caption text-grey">Một vài nhận xét mẫu để bạn test giao diện.</p>
+              <p class="text-caption text-grey">
+                {{ reviewsLoading ? 'Đang tải đánh giá...' : (reviews.length ? 'Đánh giá thật từ độc giả đã mượn sách.' : 'Chưa có đánh giá nào cho cuốn sách này.') }}
+              </p>
             </div>
             <div class="rating-summary">
               <div class="rating-stars">
-                <v-icon v-for="n in 5" :key="n" size="18" color="amber">mdi-star</v-icon>
+                <v-icon v-for="n in 5" :key="n" size="18" :color="n <= roundedRating ? 'amber' : 'grey-lighten-3'">mdi-star</v-icon>
               </div>
-              <strong>{{ avgRating }}/5</strong>
+              <strong>{{ avgRating }}</strong>
               <span class="text-caption text-grey">({{ reviews.length }} lượt)</span>
             </div>
           </div>
 
-          <div class="review-list">
-            <div v-for="review in reviews" :key="review.name" class="review-item">
+          <v-alert v-if="!reviewsLoading && !reviews.length" type="info" variant="tonal" density="compact">
+            Cuốn sách này chưa có lượt đánh giá nào.
+          </v-alert>
+
+          <div v-else class="review-list">
+            <div v-for="review in reviews" :key="review.reviewKey" class="review-item">
               <v-avatar size="34" class="review-avatar">{{ review.initials }}</v-avatar>
               <div class="review-body">
                 <div class="d-flex align-center justify-space-between">
@@ -95,6 +117,7 @@
           <v-text-field
             v-model="borrowReturnAt"
             type="datetime-local"
+            step="1"
             label="Ngày giờ trả sách"
             density="comfortable"
             variant="outlined"
@@ -110,7 +133,7 @@
           variant="tonal"
           color="primary"
           class="mr-2"
-          :disabled="book.soBanConLai <= 0"
+          :disabled="!canBorrowBook(book)"
           prepend-icon="mdi-cart-plus"
           @click="handleAddToCart"
         >
@@ -119,7 +142,7 @@
         <v-btn
           class="btn-gradient"
           size="large"
-          :disabled="book.soBanConLai <= 0"
+          :disabled="!canBorrowBook(book)"
           :loading="borrowing"
           prepend-icon="mdi-book-plus"
           @click="handleBorrow"
@@ -134,8 +157,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { borrowBook, getReaderCard } from '@/utils/api'
-import { titleColor, formatMoney } from '@/utils/helpers'
+import { borrowBook, canBorrowBook, fetchBookReviews, getReaderCard } from '@/utils/api'
+import { titleColor, formatMoney, formatDurationText, formatDurationParts } from '@/utils/helpers'
+import dayjs from 'dayjs'
+import 'dayjs/locale/vi'
+
+dayjs.locale('vi')
 
 const props = defineProps({
   modelValue: Boolean,
@@ -147,41 +174,146 @@ const store = useAppStore()
 const borrowing = ref(false)
 const errorMessage = ref('')
 const quantity = ref(1)
-const borrowDuration = ref(14)
 const borrowReturnAt = ref('')
-
-const reviews = [
-  { name: 'LIB-199999', initials: 'L', rating: 5, date: '16:31:44 7/6/2026', comment: 'Nội dung cuốn hút, rất hợp để test giao diện đánh giá.' }
-]
+const reviews = ref([])
+const reviewsLoading = ref(false)
 
 const avgRating = computed(() => {
-  const total = reviews.reduce((s, r) => s + r.rating, 0)
-  return (total / reviews.length).toFixed(1)
+  if (!reviews.value.length) return '0.0/5'
+  const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
+  return `${(total / reviews.value.length).toFixed(1)}/5`
+})
+
+const roundedRating = computed(() => {
+  if (!reviews.value.length) return 0
+  const total = reviews.value.reduce((s, r) => s + Number(r.rating || 0), 0)
+  return Math.max(0, Math.min(5, Math.round(total / reviews.value.length)))
 })
 
 const heroBg = computed(() => {
   if (props.book?.imageUrl) return { backgroundImage: `url(${props.book.imageUrl})` }
   return { backgroundColor: titleColor(props.book?.tenSach) }
 })
+
 const maxQuantity = computed(() => Math.max(1, Math.min(Number(props.book?.soBanConLai || 1), 10)))
 const unitPrice = computed(() => getBorrowUnitPrice(props.book))
-const totalPrice = computed(() => {
-  const days = Math.max(1, Number(borrowDuration.value || 1))
-  return unitPrice.value * quantity.value * days
+const borrowStart = ref(new Date())
+const borrowDurationParts = computed(() => formatDurationParts(borrowStart.value, borrowReturnAt.value))
+const borrowDuration = computed(() => {
+  const totalMs = borrowDurationParts.value?.totalMs ?? 0
+  return Math.max(1, Math.ceil(totalMs / (24 * 60 * 60 * 1000)))
 })
-const borrowStart = computed(() => new Date())
+const totalPrice = computed(() => unitPrice.value * quantity.value * borrowDuration.value)
 const durationSummary = computed(() => {
-  const duration = Math.max(1, Number(borrowDuration.value || 1))
-  return `${formatMoney(unitPrice.value)} x ${duration} ngày x ${quantity.value} cuốn`
+  const span = formatDurationText(borrowStart.value, borrowReturnAt.value)
+  return `${span} • ${quantity.value} cuốn`
 })
+
+function mapReview(review = {}) {
+  const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
+  return {
+    reviewKey: buildReviewKey(review).join('||'),
+    initials: String(fullName).split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2) || 'DG',
+    name: fullName,
+    rating: Number(review.rating ?? review.Rating ?? 0),
+    date: formatReviewDate(review.createdAt || review.CreatedAt),
+    comment: review.comment || review.Comment || ''
+  }
+}
+
+function buildReviewKey(review = {}) {
+  const keys = []
+  const transactionId = review.transactionId || review.TransactionId
+  if (transactionId) keys.push(`tx:${transactionId}`)
+
+  const reviewId = review.reviewId || review.ReviewId
+  if (reviewId) keys.push(`review:${reviewId}`)
+
+  const id = review.id || review.Id
+  if (id) keys.push(`id:${id}`)
+
+  const fullName = review.fullName || review.FullName || review.username || review.Username || review.cardNumber || review.CardNumber || 'Độc giả'
+  const createdAt = review.createdAt || review.CreatedAt
+  const normalizedCreatedAt = createdAt ? new Date(createdAt).toISOString().slice(0, 19) : ''
+  keys.push([
+    review.bookId || review.BookId || '',
+    review.userId || review.UserId || '',
+    review.cardNumber || review.CardNumber || '',
+    review.username || review.Username || '',
+    fullName,
+    review.rating ?? review.Rating ?? '',
+    review.comment || review.Comment || '',
+    normalizedCreatedAt
+  ].join('|'))
+  return keys
+}
+
+function dedupeReviews(list = []) {
+  const seen = new Set()
+  const unique = []
+
+  for (const review of list) {
+    const keys = buildReviewKey(review)
+    if (keys.some(key => seen.has(key))) continue
+    keys.forEach(key => seen.add(key))
+    unique.push(review)
+  }
+
+  return unique
+}
+
+function formatReviewDate(value) {
+  if (!value) return '—'
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('HH:mm:ss DD/MM/YYYY') : String(value)
+}
+
+async function loadReviews(bookId) {
+  if (!bookId) {
+    reviews.value = []
+    return
+  }
+
+  reviewsLoading.value = true
+  try {
+    const data = await fetchBookReviews(String(bookId))
+    const groups = Array.isArray(data) ? data : []
+    const group = groups.find(item => String(item.bookId || item.BookId || '') === String(bookId))
+    const directReviews = Array.isArray(data) && data.length && !('reviews' in (data[0] || {})) && !('Reviews' in (data[0] || {}))
+      ? data
+      : []
+    const list =
+      Array.isArray(group?.reviews || group?.Reviews)
+        ? (group.reviews || group.Reviews)
+        : directReviews
+    reviews.value = dedupeReviews(list).map(mapReview)
+  } catch {
+    reviews.value = []
+  } finally {
+    reviewsLoading.value = false
+  }
+}
 
 watch(() => props.book?.id, () => {
   quantity.value = 1
-  borrowDuration.value = 14
-  const now = new Date()
-  borrowReturnAt.value = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+  borrowStart.value = new Date()
+  borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss')
   errorMessage.value = ''
+  loadReviews(props.book?.id)
+}, { immediate: true })
+
+watch(borrowReturnAt, () => {
+  if (!borrowReturnAt.value) return
+  const parsed = dayjs(borrowReturnAt.value)
+  if (!parsed.isValid()) return
+  if (parsed.isBefore(dayjs(borrowStart.value), 'minute')) {
+    borrowReturnAt.value = dayjs(borrowStart.value).add(1, 'hour').format('YYYY-MM-DDTHH:mm:ss')
+  }
 })
+
+async function handleToggleFavorite() {
+  await store.toggleFavorite(props.book)
+}
 
 async function handleBorrow() {
   errorMessage.value = ''
@@ -196,10 +328,20 @@ async function handleBorrow() {
     errorMessage.value = 'Không tìm thấy mã sách.'
     return
   }
+  if (!canBorrowBook(props.book || {})) {
+    errorMessage.value = props.book?.trangThai
+      ? `Sách hiện đang ở trạng thái "${props.book.trangThai}" nên chưa thể mượn.`
+      : 'Sách hiện chưa đủ điều kiện để mượn.'
+    return
+  }
 
   borrowing.value = true
   try {
-    const response = await borrowBook(card, bookId, quantity.value)
+    const response = await borrowBook(card, bookId, quantity.value, {
+      borrowedAt: borrowStart.value.toISOString(),
+      dueAt: dayjs(borrowReturnAt.value).toISOString(),
+      isbn: props.book?.isbn || props.book?.Isbn || props.book?.ISBN || ''
+    })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
       errorMessage.value = data?.message || data?.Message || 'Không mượn được sách. Vui lòng thử lại.'
@@ -211,7 +353,8 @@ async function handleBorrow() {
       quantity: quantity.value,
       totalPrice: totalPrice.value,
       borrowAt: borrowStart.value.toISOString(),
-      borrowDuration: Math.max(1, Number(borrowDuration.value || 1))
+      borrowDuration: borrowDuration.value,
+      returnAt: dayjs(borrowReturnAt.value).toISOString()
     })
     emit('update:modelValue', false)
   } catch {
@@ -225,6 +368,10 @@ function handleAddToCart() {
   errorMessage.value = ''
   if (!props.book?.id) {
     errorMessage.value = 'Không tìm thấy mã sách.'
+    return
+  }
+  if (!canBorrowBook(props.book || {})) {
+    errorMessage.value = 'Sách hiện chưa đủ điều kiện để thêm vào giỏ hàng.'
     return
   }
   store.addToCart(props.book, quantity.value)
@@ -276,6 +423,9 @@ function getBorrowUnitPrice(book = {}) {
   z-index: 20;
   background: rgba(255,255,255,0.92);
   color: #334155;
+}
+.favorite-btn.is-favorite {
+  background: rgba(255,255,255,0.98);
 }
 .detail-scroll {
   max-height: 520px;

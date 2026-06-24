@@ -17,10 +17,15 @@ namespace N2.Circulation.Api.Controllers;
 [Route("api/circulation")]
 public sealed class CirculationController : ControllerBase
 {
-    private const decimal DailyFineRate = 5000m;
     private const int DefaultBorrowDays = 14;
     private const int DefaultMonthlyBorrowLimit = 5;
+    private const decimal DefaultBorrowPricePerBook = 5000m;
+    private const decimal DefaultDailyOverdueFine = 5000m;
+    private const decimal DefaultLightDamageFine = 20000m;
+    private const decimal DefaultHeavyDamageFine = 100000m;
+    private const decimal DefaultLostFine = 100000m;
     private const string BorrowPolicyEventType = "BorrowPolicyUpdated";
+    private const string PricePolicyEventType = "PricePolicyUpdated";
     private readonly CirculationDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
@@ -65,6 +70,32 @@ public sealed class CirculationController : ControllerBase
                 return NotFound(new { Message = $"Book with ISBN '{request.Isbn}' not found in catalog." });
             }
             resolvedBookId = bookId.Value.ToString();
+        }
+
+        var catalogBook = await GetCatalogBookAsync(resolvedBookId!, cancellationToken);
+        if (catalogBook is null && !string.IsNullOrWhiteSpace(request.Isbn))
+        {
+            var fallbackBookId = await GetBookIdByIsbnAsync(request.Isbn, cancellationToken);
+            if (fallbackBookId is not null)
+            {
+                resolvedBookId = fallbackBookId.Value.ToString();
+                catalogBook = await GetCatalogBookAsync(resolvedBookId, cancellationToken);
+            }
+        }
+        if (catalogBook is null)
+        {
+            return NotFound(new { Message = $"Book '{resolvedBookId}' not found in catalog." });
+        }
+
+        if (!CanBorrowCatalogBook(catalogBook, out var borrowBlockReason))
+        {
+            return BadRequest(new
+            {
+                Message = borrowBlockReason,
+                BookId = resolvedBookId,
+                SoBanConLai = catalogBook.SoBanConLai,
+                TrangThai = catalogBook.TrangThai
+            });
         }
 
         var monthlyLimit = await GetMonthlyBorrowLimitAsync(cancellationToken);
@@ -148,11 +179,11 @@ public sealed class CirculationController : ControllerBase
             CardNumber = transaction.CardNumber,
             ReaderName = transaction.ReaderName,
             ReaderUsername = transaction.ReaderUsername,
-            BorrowedAt = transaction.BorrowedAt,
-            DueAt = transaction.DueAt,
-            CreatedAt = transaction.BorrowedAt,
-            UpdatedAt = transaction.BorrowedAt,
-            RequestDate = transaction.BorrowedAt
+            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
+            DueAt = AsUtcDateTime(transaction.DueAt),
+            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            UpdatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            RequestDate = AsUtcDateTime(transaction.BorrowedAt)
         });
     }
 
@@ -210,6 +241,226 @@ public sealed class CirculationController : ControllerBase
         return await RequestReturnAsync(transaction, cancellationToken);
     }
 
+    [HttpPost("transactions/{id:guid}/cancel-borrow")]
+    public async Task<ActionResult> CancelBorrowAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status != "Pending")
+        {
+            return BadRequest(new { Message = "Only pending borrow requests can be cancelled." });
+        }
+
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("borrow.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "borrow-cancelled",
+            Title = "Hủy mượn sách",
+            Message = "Yêu cầu mượn sách đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+
+        _dbContext.BorrowTransactions.Remove(transaction);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Borrow request cancelled.", TransactionId = id });
+    }
+
+    [HttpPost("transactions/{id:guid}/cancel-return")]
+    public async Task<ActionResult> CancelReturnAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.Status != "ReturnPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for return approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("return.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt,
+            Status = transaction.Status
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "return-cancelled",
+            Title = "Hủy trả sách",
+            Message = "Yêu cầu trả sách đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Return request cancelled.", TransactionId = id, Status = transaction.Status });
+    }
+
+    [HttpPost("transactions/{id:guid}/renew/request")]
+    public async Task<ActionResult> RequestRenewAsync(
+        Guid id,
+        [FromBody] RenewRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.ReturnedAt is not null || transaction.Status == "Returned")
+        {
+            return BadRequest(new { Message = "Returned transactions cannot be renewed." });
+        }
+
+        if (transaction.Status == "RenewPending")
+        {
+            return Accepted(new
+            {
+                Message = "Renew request is already waiting for approval.",
+                TransactionId = transaction.Id,
+                Status = transaction.Status
+            });
+        }
+
+        if (transaction.Status == "Pending" || transaction.Status == "ReturnPending")
+        {
+            return BadRequest(new { Message = "Only active borrow transactions can be renewed." });
+        }
+
+        var extraDays = Math.Clamp(request?.ExtraDays ?? 7, 1, 60);
+        var reason = string.IsNullOrWhiteSpace(request?.Reason) ? $"Gia hạn thêm {extraDays} ngày" : request!.Reason!.Trim();
+        transaction.Status = "RenewPending";
+
+        var requestedAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("renew.requested", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            ExtraDays = extraDays,
+            Reason = reason,
+            RequestedAt = requestedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-requested",
+            Title = "Chờ duyệt gia hạn",
+            Message = $"Yêu cầu gia hạn {extraDays} ngày đã được gửi tới thủ thư.",
+            VisibleToReader = true,
+            CreatedAt = requestedAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Accepted(new
+        {
+            Message = "Renew request waiting for librarian approval.",
+            TransactionId = transaction.Id,
+            Status = transaction.Status,
+            ExtraDays = extraDays
+        });
+    }
+
+    [HttpPost("transactions/{id:guid}/renew/cancel")]
+    public async Task<ActionResult> CancelRenewAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var transaction = await _dbContext.BorrowTransactions
+            .FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+
+        if (transaction is null)
+        {
+            return NotFound(new { Message = "Borrow transaction not found." });
+        }
+
+        if (!await CanAccessCardNumberAsync(transaction.CardNumber, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        if (transaction.Status != "RenewPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for renewal approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
+        var cancelledAt = DateTimeOffset.UtcNow;
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("renew.cancelled", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            transaction.UserId,
+            CancelledAt = cancelledAt,
+            Status = transaction.Status
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            TransactionId = transaction.Id,
+            transaction.BookId,
+            transaction.CardNumber,
+            Type = "renew-cancelled",
+            Title = "Hủy gia hạn",
+            Message = "Yêu cầu gia hạn đã được hủy.",
+            VisibleToReader = true,
+            CreatedAt = cancelledAt
+        }));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Renew request cancelled.", TransactionId = id, Status = transaction.Status });
+    }
+
     [HttpPost("transactions/{id:guid}/return/approve")]
     [HttpPost("transactions/{id:guid}/confirm-return")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
@@ -257,6 +508,11 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Returned transactions cannot be renewed." });
         }
 
+        if (transaction.Status == "ReturnPending")
+        {
+            return BadRequest(new { Message = "Return requests must be resolved before renewal." });
+        }
+
         var extraDays = Math.Clamp(request?.ExtraDays ?? 7, 1, 60);
         var reason = string.IsNullOrWhiteSpace(request?.Reason) ? $"Gia hạn thêm {extraDays} ngày" : request!.Reason!.Trim();
         var dueAt = transaction.DueAt.Kind == DateTimeKind.Utc
@@ -294,7 +550,8 @@ public sealed class CirculationController : ControllerBase
         {
             message = "Transaction renewed.",
             transactionId = transaction.Id,
-            dueAt = transaction.DueAt
+            dueAt = transaction.DueAt,
+            status = transaction.Status
         });
     }
 
@@ -318,6 +575,12 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Returned transactions cannot be renewed." });
         }
 
+        if (transaction.Status != "RenewPending")
+        {
+            return BadRequest(new { Message = "Transaction is not waiting for renewal approval." });
+        }
+
+        transaction.Status = transaction.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed";
         var reason = string.IsNullOrWhiteSpace(request?.Reason) ? "Không đủ điều kiện gia hạn" : request.Reason.Trim();
         var rejectedAt = DateTimeOffset.UtcNow;
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.renew.rejected", new
@@ -325,6 +588,7 @@ public sealed class CirculationController : ControllerBase
             TransactionId = transaction.Id,
             transaction.BookId,
             transaction.CardNumber,
+            Status = transaction.Status,
             Reason = reason,
             RejectedAt = rejectedAt
         }));
@@ -399,6 +663,11 @@ public sealed class CirculationController : ControllerBase
             return BadRequest(new { Message = "Borrow request is still waiting for approval." });
         }
 
+        if (transaction.Status == "RenewPending")
+        {
+            return BadRequest(new { Message = "Renew requests must be resolved before requesting return." });
+        }
+
         if (transaction.Status == "ReturnPending")
         {
             return Accepted(new
@@ -434,8 +703,11 @@ public sealed class CirculationController : ControllerBase
         string condition = "Good",
         string? conditionNote = null)
     {
+        var pricePolicy = await GetPricePolicyAsync(cancellationToken);
         var overdueDays = Math.Max(0, (int)Math.Ceiling((returnedAt - transaction.DueAt).TotalDays));
-        var fineAmount = overdueDays * DailyFineRate;
+        var overdueFineAmount = overdueDays * pricePolicy.DailyOverdueFine;
+        var conditionFineAmount = GetReturnConditionFine(condition, pricePolicy);
+        var fineAmount = overdueFineAmount + conditionFineAmount;
 
         var shouldReturnCopyToCatalog = ShouldReturnCopyToCatalog(condition);
         if (shouldReturnCopyToCatalog)
@@ -464,7 +736,7 @@ public sealed class CirculationController : ControllerBase
         transaction.FineAmount = fineAmount;
         transaction.Status = "Returned";
 
-        if (fineAmount > 0)
+        if (overdueFineAmount > 0)
         {
             _dbContext.FineCharges.Add(new FineCharge
             {
@@ -472,9 +744,28 @@ public sealed class CirculationController : ControllerBase
                 BorrowTransactionId = transaction.Id,
                 UserId = transaction.UserId ?? string.Empty,
                 CardNumber = transaction.CardNumber,
-                Amount = fineAmount,
-                Reason = $"Overdue return by {overdueDays} day(s)",
+                Amount = overdueFineAmount,
+                Reason = overdueDays > 0
+                    ? $"Phạt trả quá hạn {overdueDays} ngày"
+                    : "Phạt trả quá hạn",
                 CreatedAt = returnedAt,
+                PaymentStatus = "Unpaid",
+                PaidAt = null
+            });
+        }
+
+        if (conditionFineAmount > 0)
+        {
+            _dbContext.FineCharges.Add(new FineCharge
+            {
+                Id = Guid.NewGuid(),
+                BorrowTransactionId = transaction.Id,
+                UserId = transaction.UserId ?? string.Empty,
+                CardNumber = transaction.CardNumber,
+                Amount = conditionFineAmount,
+                Reason = GetReturnConditionFineReason(condition, conditionFineAmount),
+                CreatedAt = returnedAt,
+                PaymentStatus = "Unpaid",
                 PaidAt = null
             });
         }
@@ -508,6 +799,8 @@ public sealed class CirculationController : ControllerBase
             ConditionNote = conditionNote,
             ReturnedToCatalog = shouldReturnCopyToCatalog,
             InventoryAction = shouldReturnCopyToCatalog ? "ReturnedToShelf" : "RemovedFromCirculation",
+            OverdueFineAmount = overdueFineAmount,
+            ConditionFineAmount = conditionFineAmount,
             CheckedAt = DateTimeOffset.UtcNow
         }));
 
@@ -572,11 +865,11 @@ public sealed class CirculationController : ControllerBase
             Isbn = transaction.Isbn,
             UserId = transaction.UserId,
             CardNumber = transaction.CardNumber,
-            BorrowedAt = transaction.BorrowedAt,
-            ReturnedAt = returnedAt,
-            CreatedAt = transaction.BorrowedAt,
-            UpdatedAt = returnedAt,
-            RequestDate = transaction.BorrowedAt,
+            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
+            ReturnedAt = AsUtcDateTime(returnedAt),
+            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
+            UpdatedAt = AsUtcDateTime(returnedAt),
+            RequestDate = AsUtcDateTime(transaction.BorrowedAt),
             FineAmount = fineAmount,
             Condition = condition,
             ReturnedToCatalog = shouldReturnCopyToCatalog
@@ -602,148 +895,19 @@ public sealed class CirculationController : ControllerBase
             return Forbid();
         }
 
-        var query = _dbContext.BorrowTransactions.AsNoTracking();
+        return Ok(await BuildTransactionsListAsync(userId, cardNumber, activeOnly, pageSize, false, cancellationToken));
+    }
 
-        if (!IsStaffUser())
-        {
-            var tokenCardNumber = GetTokenCardNumber();
-            cardNumber = string.IsNullOrWhiteSpace(tokenCardNumber) ? requestedCardNumber : tokenCardNumber;
-        }
-
-        if (!string.IsNullOrWhiteSpace(userId))
-            query = query.Where(t => t.UserId == userId);
-        if (!string.IsNullOrWhiteSpace(cardNumber))
-            query = query.Where(t => t.CardNumber == cardNumber);
-        if (activeOnly == true)
-            query = query.Where(t => t.ReturnedAt == null && t.Status != "Pending");
-
-        var limit = Math.Clamp(pageSize ?? 100, 1, 200);
-        var result = await query
-            .OrderByDescending(t => t.BorrowedAt)
-            .Take(limit)
-            .Select(t => new {
-                t.Id,
-                t.BookId,
-                t.Isbn,
-                t.UserId,
-                t.CardNumber,
-                t.ReaderName,
-                t.ReaderUsername,
-                BorrowedAt = t.BorrowedAt,
-                DueAt = t.DueAt,
-                ReturnedAt = t.ReturnedAt,
-                FineAmount = t.FineAmount,
-                Status = t.Status == "Pending" ? "Pending" :
-                         t.Status == "ReturnPending" ? "ReturnPending" :
-                         t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
-                         t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
-            })
-            .ToListAsync(cancellationToken);
-
-        // Enrich with book metadata from Catalog API
-        var bookIds = result.Select(r => r.BookId).Distinct().ToList();
-        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
-        var cardNumbers = result
-            .Select(r => r.CardNumber)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var userRefs = result
-            .Select(r => r.UserId)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var userGuidRefs = userRefs
-            .Where(value => Guid.TryParse(value, out _))
-            .Select(value => Guid.Parse(value!))
-            .Distinct()
-            .ToList();
-
-        var transactionUsers = await _dbContext.Users
-            .AsNoTracking()
-            .Where(user =>
-                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
-                userGuidRefs.Contains(user.Id) ||
-                userRefs.Contains(user.Username))
-            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
-            .ToListAsync(cancellationToken);
-
-        var usersByCard = transactionUsers
-            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
-            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
-        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
-        var cardsNeedingIdentity = result
-            .Where(r => string.IsNullOrWhiteSpace(r.ReaderName) &&
-                        !string.IsNullOrWhiteSpace(r.CardNumber) &&
-                        !usersByCard.ContainsKey(r.CardNumber))
-            .Select(r => r.CardNumber!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(cardsNeedingIdentity, cancellationToken);
-
-        var enriched = result.Select(r =>
-        {
-            books.TryGetValue(r.BookId, out var book);
-            var readerName = r.ReaderName ?? "";
-            var readerUsername = r.ReaderUsername ?? "";
-            if (!string.IsNullOrWhiteSpace(r.CardNumber) && usersByCard.TryGetValue(r.CardNumber, out var byCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byCard.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersById.TryGetValue(r.UserId, out var byId))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byId.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersByUsername.TryGetValue(r.UserId, out var byUsername))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byUsername.Username;
-            }
-            else if (!string.IsNullOrWhiteSpace(r.CardNumber) && identityUsersByCard.TryGetValue(r.CardNumber, out var byIdentityCard))
-            {
-                if (string.IsNullOrWhiteSpace(readerName))
-                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
-                if (string.IsNullOrWhiteSpace(readerUsername))
-                    readerUsername = byIdentityCard.Username;
-            }
-
-            return (object)new {
-                r.Id,
-                r.BookId,
-                Isbn = r.Isbn ?? book?.Isbn ?? "",
-                r.UserId,
-                r.CardNumber,
-                ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
-                ReaderUsername = readerUsername,
-                BorrowedAt = r.BorrowedAt,
-                DueAt = r.DueAt,
-                ReturnedAt = r.ReturnedAt,
-                createdAt = ToIsoUtc(r.BorrowedAt),
-                updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
-                requestDate = ToIsoUtc(r.BorrowedAt),
-                borrowDate = ToIsoUtc(r.BorrowedAt),
-                ngayMuon = ToIsoUtc(r.BorrowedAt),
-                returnDate = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
-                FineAmount = r.FineAmount,
-                Status = r.Status,
-                TenSach = book?.TenSach ?? "",
-                TacGia = book?.TacGia ?? "",
-                NhaSanXuat = book?.NhaSanXuat ?? "",
-                ImageUrl = book?.ImageUrl ?? ""
-            };
-        }).ToList();
-
-        return Ok(enriched);
+    [HttpGet("transactions/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetTransactionsEmbedAsync(
+        [FromQuery] string? userId,
+        [FromQuery] string? cardNumber,
+        [FromQuery] bool? activeOnly,
+        [FromQuery] int? pageSize,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await BuildTransactionsListAsync(userId, cardNumber, activeOnly, pageSize, true, cancellationToken));
     }
 
     [HttpGet("stats/monthly")]
@@ -850,6 +1014,10 @@ public sealed class CirculationController : ControllerBase
             .AsNoTracking()
             .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
 
+        var totalRevenue = await _dbContext.RevenueRecords
+            .AsNoTracking()
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
         var unpaidFines = await _dbContext.FineCharges
             .AsNoTracking()
             .Where(item => item.PaidAt == null)
@@ -901,7 +1069,7 @@ public sealed class CirculationController : ControllerBase
             var key = (month.Year, month.Month);
             return new
             {
-                month = month.ToString("MMM", CultureInfo.InvariantCulture),
+                month = month.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 borrows = borrowTrendLookup.TryGetValue(key, out var borrowCount) ? borrowCount : 0,
                 returns = returnTrendLookup.TryGetValue(key, out var returnCount) ? returnCount : 0
             };
@@ -914,6 +1082,7 @@ public sealed class CirculationController : ControllerBase
             activeBorrows,
             overdueBorrows,
             totalFines,
+            totalRevenue,
             unpaidFines,
             topBorrowedBooks,
             borrowingTrends,
@@ -1043,15 +1212,48 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("events")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<IReadOnlyList<object>>> GetPublishedEventsAsync(
         [FromQuery] int? pageSize,
         CancellationToken cancellationToken)
     {
         var limit = Math.Clamp(pageSize ?? 100, 1, 500);
-        var events = await _dbContext.PublishedEventLogs
+        var eventsQuery = _dbContext.PublishedEventLogs
             .AsNoTracking()
-            .OrderByDescending(e => e.PublishedAt)
+            .OrderByDescending(e => e.PublishedAt);
+
+        if (!IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
+                ?? GetClaimValue("sub")
+                ?? GetClaimValue("id")
+                ?? GetClaimValue("userId");
+
+            var readerTransactionIds = await _dbContext.BorrowTransactions
+                .AsNoTracking()
+                .Where(item =>
+                    (!string.IsNullOrWhiteSpace(tokenCardNumber) && item.CardNumber == tokenCardNumber) ||
+                    (!string.IsNullOrWhiteSpace(tokenUserId) && item.UserId == tokenUserId))
+                .Select(item => item.Id)
+                .ToListAsync(cancellationToken);
+
+            var scannedEvents = await eventsQuery
+                .Take(Math.Clamp(limit * 6, limit, 1000))
+                .Select(e => new { e.Id, e.SourceService, e.EventType, e.PayloadJson, e.PublishedAt })
+                .ToListAsync(cancellationToken);
+
+            var filtered = scannedEvents
+                .Where(item => EventBelongsToReader(item.PayloadJson, tokenCardNumber, tokenUserId, readerTransactionIds))
+                .Take(limit)
+                .ToList();
+
+            return Ok(filtered);
+        }
+
+        var events = await eventsQuery
             .Take(limit)
             .Select(e => new { e.Id, e.SourceService, e.EventType, e.PayloadJson, e.PublishedAt })
             .ToListAsync(cancellationToken);
@@ -1074,6 +1276,7 @@ public sealed class CirculationController : ControllerBase
         var totalOverdue = await _dbContext.BorrowTransactions
             .CountAsync(b => b.ReturnedAt == null && b.Status != "Pending" && b.DueAt < now, cancellationToken);
         var totalFines = await _dbContext.FineCharges.SumAsync(f => f.Amount, cancellationToken);
+        var totalRevenue = await _dbContext.RevenueRecords.SumAsync(r => (decimal?)r.Amount, cancellationToken) ?? 0m;
         var totalUsers = await _dbContext.Users.CountAsync(cancellationToken);
 
         return Ok(new
@@ -1083,21 +1286,77 @@ public sealed class CirculationController : ControllerBase
             totalBorrowed,
             totalOverdue,
             totalFines,
+            totalRevenue,
             totalUsers
         });
     }
 
-    [HttpGet("fines")]
+    [HttpGet("revenue")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> GetRevenueAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] string? period,
+        [FromQuery] DateTime? date,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int take = 20)
+    {
+        return Ok(await BuildRevenueSummaryAsync(period, date, from, to, take, cancellationToken));
+    }
+
+    [HttpGet("revenue/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult> GetRevenueEmbedAsync(
+        CancellationToken cancellationToken,
+        [FromQuery] string? period,
+        [FromQuery] DateTime? date,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int take = 20)
+    {
+        return Ok(await BuildRevenueSummaryAsync(period, date, from, to, take, cancellationToken));
+    }
+
+    [HttpGet("fines")]
+    [Authorize]
     public async Task<ActionResult<IReadOnlyList<object>>> GetFinesAsync(CancellationToken cancellationToken)
     {
-        var fines = await _dbContext.FineCharges
-            .AsNoTracking()
-            .OrderByDescending(f => f.CreatedAt)
-            .Select(f => new { f.Id, f.BorrowTransactionId, f.UserId, f.CardNumber, f.Amount, f.Reason, f.CreatedAt, f.PaidAt })
-            .ToListAsync(cancellationToken);
+        return Ok(await BuildFinesListAsync(false, cancellationToken));
+    }
 
-        return Ok(fines);
+    [HttpGet("fines/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<IReadOnlyList<object>>> GetFinesEmbedAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await BuildFinesListAsync(true, cancellationToken));
+    }
+
+    [HttpPost("fines/{id}/request-payment")]
+    [Authorize]
+    public async Task<ActionResult> RequestFinePaymentAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var fine = await _dbContext.FineCharges.FindAsync(new object[] { id }, cancellationToken);
+        if (fine is null)
+            return NotFound(new { Message = "Fine not found." });
+
+        if (!await CanAccessCardNumberAsync(fine.CardNumber, cancellationToken))
+            return Forbid();
+
+        if (fine.PaidAt != null || string.Equals(fine.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Fine has already been paid." });
+        }
+
+        if (string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(new { Message = "Fine payment is already waiting for librarian approval.", FineId = id, PaymentStatus = fine.PaymentStatus });
+        }
+
+        fine.PaymentStatus = "PendingApproval";
+        fine.PaymentRequestedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Fine payment request submitted.", FineId = id, PaymentStatus = fine.PaymentStatus });
     }
 
     [HttpPost("fines/{id}/pay")]
@@ -1108,10 +1367,74 @@ public sealed class CirculationController : ControllerBase
         if (fine is null)
             return NotFound(new { Message = "Fine not found." });
 
+        if (!string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Only pending fine payments can be approved." });
+        }
+
+        fine.PaymentStatus = "Paid";
         fine.PaidAt = DateTime.UtcNow;
+        _dbContext.RevenueRecords.Add(new RevenueRecord
+        {
+            Id = Guid.NewGuid(),
+            SourceType = "FinePayment",
+            ReferenceId = fine.Id.ToString(),
+            UserId = fine.UserId,
+            CardNumber = fine.CardNumber,
+            Amount = fine.Amount,
+            Description = fine.Reason,
+            CreatedAt = fine.PaidAt.Value
+        });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return Ok(new { Message = "Fine marked as paid.", FineId = id });
+        return Ok(new { Message = "Fine payment approved.", FineId = id });
+    }
+
+    [HttpPost("fines/{id}/reject-payment")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> RejectFinePaymentAsync(
+        Guid id,
+        [FromBody] TransactionRejectRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var fine = await _dbContext.FineCharges.FindAsync(new object[] { id }, cancellationToken);
+        if (fine is null)
+            return NotFound(new { Message = "Fine not found." });
+
+        if (!string.Equals(fine.PaymentStatus, "PendingApproval", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { Message = "Only pending fine payments can be rejected." });
+        }
+
+        var reason = string.IsNullOrWhiteSpace(request?.Reason)
+            ? "Không đủ điều kiện duyệt thanh toán phí phạt"
+            : request!.Reason!.Trim();
+        var rejectedAt = DateTimeOffset.UtcNow;
+
+        fine.PaymentStatus = "Unpaid";
+        fine.PaymentRequestedAt = null;
+
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("fine.payment.rejected", new
+        {
+            FineId = id,
+            Reason = reason,
+            RejectedAt = rejectedAt
+        }));
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("reader.notification", new
+        {
+            FineId = id,
+            fine.BorrowTransactionId,
+            fine.CardNumber,
+            Type = "fine-payment-rejected",
+            Title = "Từ chối duyệt phí phạt",
+            Message = $"Yêu cầu thanh toán phí phạt bị từ chối. Lý do: {reason}.",
+            VisibleToReader = true,
+            CreatedAt = rejectedAt
+        }));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { Message = "Fine payment rejected.", FineId = id, Reason = reason });
     }
 
     [HttpPost("books/{bookId}/reviews")]
@@ -1277,15 +1600,17 @@ public sealed class CirculationController : ControllerBase
         [FromQuery] string? bookId,
         CancellationToken cancellationToken)
     {
+        var deletedReviewKeys = await GetDeletedReviewKeysAsync(bookId?.Trim(), cancellationToken);
+
         if (!string.IsNullOrWhiteSpace(bookId))
         {
-            var catalogReviews = await GetCatalogBookReviewsAsync(bookId.Trim(), cancellationToken);
-            var localReviews = await GetLocalBookReviewsAsync(bookId.Trim(), cancellationToken);
+            var catalogReviews = await GetCatalogBookReviewsAsync(bookId.Trim(), deletedReviewKeys, cancellationToken);
+            var localReviews = await GetLocalBookReviewsAsync(bookId.Trim(), deletedReviewKeys, cancellationToken);
             return Ok(GroupReviews(MergeReviews(catalogReviews, localReviews)));
         }
 
-        var catalogGrouped = await GetCatalogReviewsFromBooksAsync(cancellationToken);
-        var localGrouped = GroupReviews(await GetLocalBookReviewsAsync(null, cancellationToken));
+        var catalogGrouped = await GetCatalogReviewsFromBooksAsync(deletedReviewKeys, cancellationToken);
+        var localGrouped = GroupReviews(FilterDeletedReviews(await GetLocalBookReviewsAsync(null, deletedReviewKeys, cancellationToken), deletedReviewKeys));
 
         if (catalogGrouped.Count == 0)
         {
@@ -1298,6 +1623,66 @@ public sealed class CirculationController : ControllerBase
         }
 
         return Ok(MergeGroupedReviews(catalogGrouped, localGrouped));
+    }
+
+    [HttpDelete("books/{bookId}/reviews/{reviewKey}")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult> DeleteReviewAsync(
+        string bookId,
+        string reviewKey,
+        [FromBody] ReviewDeleteRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var requestedBookId = bookId.Trim();
+        var requestedReviewKey = reviewKey.Trim();
+        if (string.IsNullOrWhiteSpace(requestedBookId) || string.IsNullOrWhiteSpace(requestedReviewKey))
+        {
+            return BadRequest(new { Message = "BookId and review key are required." });
+        }
+
+        var deletedReviewKeys = await GetDeletedReviewKeysAsync(requestedBookId, cancellationToken);
+        var reviews = await GetLocalBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
+        var catalogReviews = await GetCatalogBookReviewsAsync(requestedBookId, deletedReviewKeys, cancellationToken);
+        var review = MergeReviews(catalogReviews, reviews)
+            .FirstOrDefault(item =>
+                MatchesReviewKey(item, requestedReviewKey) ||
+                MatchesReviewRequest(item, request, requestedBookId, requestedReviewKey));
+
+        if (review is null)
+        {
+            return NotFound(new { Message = "Review not found." });
+        }
+
+        if (await IsReviewDeletedAsync(review, cancellationToken))
+        {
+            return Conflict(new { Message = "This review has already been deleted." });
+        }
+
+        _dbContext.PublishedEventLogs.Add(CreateEventLog("book.review.deleted", new
+        {
+            BookId = review.BookId,
+            review.Id,
+            ReviewId = review.ReviewId == Guid.Empty ? (Guid?)null : review.ReviewId,
+            review.TransactionId,
+            review.UserId,
+            review.CardNumber,
+            review.Username,
+            review.FullName,
+            review.Rating,
+            review.Comment,
+            DeletedAt = DateTimeOffset.UtcNow,
+            DeletedBy = GetClaimValue(ClaimTypes.NameIdentifier) ?? GetClaimValue("sub"),
+            DeletedByName = GetClaimValue("fullName") ?? GetClaimValue(ClaimTypes.Name) ?? GetClaimValue("username")
+        }));
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new
+        {
+            Message = "Review deleted.",
+            BookId = review.BookId,
+            ReviewKey = requestedReviewKey
+        });
     }
 
     [HttpPost("transactions/{id}/approve")]
@@ -1316,10 +1701,27 @@ public sealed class CirculationController : ControllerBase
             return StatusCode(catalogBorrowResult.StatusCode, new { Message = catalogBorrowResult.Message });
 
         var approvedAt = DateTime.UtcNow;
+        var pricePolicy = await GetPricePolicyAsync(cancellationToken);
+        var requestedBorrowedAt = NormalizeUtc(transaction.BorrowedAt);
         var requestedDueAt = NormalizeUtc(transaction.DueAt);
+        var requestedDuration = requestedDueAt - requestedBorrowedAt;
+        var borrowRevenue = pricePolicy.BorrowPricePerBook;
         transaction.Status = "Borrowed";
         transaction.BorrowedAt = approvedAt;
-        transaction.DueAt = requestedDueAt > approvedAt ? requestedDueAt : approvedAt.AddDays(DefaultBorrowDays);
+        transaction.DueAt = requestedDuration > TimeSpan.Zero
+            ? approvedAt.Add(requestedDuration)
+            : approvedAt.AddDays(DefaultBorrowDays);
+        _dbContext.RevenueRecords.Add(new RevenueRecord
+        {
+            Id = Guid.NewGuid(),
+            SourceType = "BorrowApproval",
+            ReferenceId = transaction.Id.ToString(),
+            UserId = transaction.UserId,
+            CardNumber = transaction.CardNumber,
+            Amount = borrowRevenue,
+            Description = $"Thu mượn 1 cuốn",
+            CreatedAt = approvedAt
+        });
         _dbContext.PublishedEventLogs.Add(CreateEventLog("transaction.approved", new { TransactionId = id, ApprovedAt = new DateTimeOffset(approvedAt, TimeSpan.Zero) }));
         _dbContext.PublishedEventLogs.Add(CreateEventLog("book.borrowed", new BookBorrowedEvent
         {
@@ -1342,7 +1744,7 @@ public sealed class CirculationController : ControllerBase
                 transaction.ReaderName,
                 transaction.ReaderUsername,
                 BorrowedAt = approvedAt,
-                DueAt = transaction.DueAt,
+                DueAt = AsUtcDateTime(transaction.DueAt),
                 CreatedAt = approvedAt,
                 UpdatedAt = approvedAt,
                 RequestDate = approvedAt,
@@ -1360,20 +1762,57 @@ public sealed class CirculationController : ControllerBase
     }
 
     [HttpGet("settings/borrow-policy")]
-    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    [Authorize]
     public async Task<ActionResult<object>> GetBorrowPolicyAsync(CancellationToken cancellationToken)
     {
-        var monthlyBorrowLimit = await GetMonthlyBorrowLimitAsync(cancellationToken);
-        return Ok(new { monthlyBorrowLimit });
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return Ok(new { monthlyBorrowLimit = policy.MonthlyBorrowLimit });
     }
 
     [HttpPut("settings/borrow-policy")]
     [Authorize(Roles = "Librarian,Admin,librarian,admin")]
     public async Task<ActionResult<object>> UpdateBorrowPolicyAsync([FromBody] BorrowPolicyRequest request, CancellationToken cancellationToken)
     {
-        var monthlyBorrowLimit = Math.Clamp(request.MonthlyBorrowLimit, 1, 100);
-        await SetMonthlyBorrowLimitAsync(monthlyBorrowLimit, cancellationToken);
-        return Ok(new { message = "Borrow policy updated.", monthlyBorrowLimit });
+        var currentPolicy = await GetPricePolicyAsync(cancellationToken);
+        var updatedPolicy = currentPolicy with
+        {
+            MonthlyBorrowLimit = Math.Clamp(request.MonthlyBorrowLimit, 1, 100)
+        };
+
+        await SetPricePolicyAsync(updatedPolicy, cancellationToken);
+        return Ok(new { message = "Borrow policy updated.", monthlyBorrowLimit = updatedPolicy.MonthlyBorrowLimit });
+    }
+
+    [HttpGet("settings/prices")]
+    [Authorize]
+    public async Task<ActionResult<object>> GetPricePolicySettingsAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await BuildPricePolicySettingsAsync(cancellationToken));
+    }
+
+    [HttpGet("settings/prices/embed")]
+    [AllowAnonymous]
+    public async Task<ActionResult<object>> GetPricePolicySettingsEmbedAsync(CancellationToken cancellationToken)
+    {
+        return Ok(await BuildPricePolicySettingsAsync(cancellationToken));
+    }
+
+    [HttpPut("settings/prices")]
+    [Authorize(Roles = "Librarian,Admin,librarian,admin")]
+    public async Task<ActionResult<object>> UpdatePricePolicySettingsAsync([FromBody] PricePolicyRequest request, CancellationToken cancellationToken)
+    {
+        var policy = NormalizePricePolicy(request);
+        await SetPricePolicyAsync(policy, cancellationToken);
+        return Ok(new
+        {
+            message = "Price policy updated.",
+            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
+            borrowPricePerBook = policy.BorrowPricePerBook,
+            dailyOverdueFine = policy.DailyOverdueFine,
+            lightDamageFine = policy.LightDamageFine,
+            heavyDamageFine = policy.HeavyDamageFine,
+            lostFine = policy.LostFine
+        });
     }
 
     [HttpPost("transactions/{id}/reject")]
@@ -1595,6 +2034,46 @@ public sealed class CirculationController : ControllerBase
                !string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static decimal GetReturnConditionFine(string? condition, PricePolicyRequest pricePolicy)
+    {
+        if (string.Equals(condition, "HeavyDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.HeavyDamageFine;
+        }
+
+        if (string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.LostFine;
+        }
+
+        if (string.Equals(condition, "LightDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return pricePolicy.LightDamageFine;
+        }
+
+        return 0m;
+    }
+
+    private static string GetReturnConditionFineReason(string? condition, decimal amount)
+    {
+        if (string.Equals(condition, "HeavyDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt hư hỏng nặng: {amount:N0} đ";
+        }
+
+        if (string.Equals(condition, "Lost", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt mất sách: {amount:N0} đ";
+        }
+
+        if (string.Equals(condition, "LightDamage", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Phạt hư hỏng nhẹ: {amount:N0} đ";
+        }
+
+        return $"Phạt do tình trạng sách: {amount:N0} đ";
+    }
+
     private static PublishedEventLog CreateEventLog<T>(string eventType, T payload)
     {
         return new PublishedEventLog
@@ -1669,6 +2148,11 @@ public sealed class CirculationController : ControllerBase
     private static string ToIsoUtc(DateTime date)
     {
         return NormalizeUtc(date).ToString("O", CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime AsUtcDateTime(DateTime date)
+    {
+        return DateTime.SpecifyKind(NormalizeUtc(date), DateTimeKind.Utc);
     }
 
     private async Task<int> GetActiveBorrowsCountAsync(string bookId, CancellationToken cancellationToken)
@@ -1767,7 +2251,10 @@ public sealed class CirculationController : ControllerBase
         return new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
     }
 
-    private async Task<List<ReviewDto>> GetCatalogBookReviewsAsync(string bookId, CancellationToken cancellationToken)
+    private async Task<List<ReviewDto>> GetCatalogBookReviewsAsync(
+        string bookId,
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -1780,7 +2267,9 @@ public sealed class CirculationController : ControllerBase
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ReadReviewsFromJson(body, bookId);
+            return FilterDeletedReviews(
+                await EnrichReviewAuthorsAsync(ReadReviewsFromJson(body, bookId), cancellationToken),
+                deletedReviewKeys);
         }
         catch
         {
@@ -1788,7 +2277,9 @@ public sealed class CirculationController : ControllerBase
         }
     }
 
-    private async Task<List<object>> GetCatalogReviewsFromBooksAsync(CancellationToken cancellationToken)
+    private async Task<List<object>> GetCatalogReviewsFromBooksAsync(
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -1816,8 +2307,10 @@ public sealed class CirculationController : ControllerBase
                     continue;
                 }
 
+                var title = ReadString(book, "tenSach", "TenSach", "title", "Title") ?? id;
                 var latestReviews = ReadArray(book, "latestReviews", "LatestReviews");
                 var reviews = latestReviews.Select(item => TryReadReview(item, id)).Where(item => item is not null).Select(item => item!).ToList();
+                reviews = FilterDeletedReviews(await EnrichReviewAuthorsAsync(reviews, cancellationToken), deletedReviewKeys);
                 var averageRating = ReadDecimal(book, "averageRating", "AverageRating");
                 var reviewCount = ReadInt(book, "reviewCount", "ReviewCount");
 
@@ -1829,6 +2322,7 @@ public sealed class CirculationController : ControllerBase
                 groups.Add(new
                 {
                     bookId = id,
+                    title,
                     averageRating = averageRating > 0 ? averageRating : (reviews.Count > 0 ? Math.Round(reviews.Average(item => item.Rating), 1) : 0),
                     reviewCount = reviewCount > 0 ? reviewCount : reviews.Count,
                     reviews = reviews.Select(ToReviewResponse).ToList()
@@ -1845,11 +2339,13 @@ public sealed class CirculationController : ControllerBase
 
     private static List<object> GroupReviews(IEnumerable<ReviewDto> reviews)
     {
-        return reviews
+        var uniqueReviews = DeduplicateReviews(reviews);
+        return uniqueReviews
             .GroupBy(item => item.BookId)
             .Select(group => new
             {
                 bookId = group.Key,
+                title = group.Select(item => item.Title).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? group.Key,
                 averageRating = group.Any() ? Math.Round(group.Average(item => item.Rating), 1) : 0,
                 reviewCount = group.Count(),
                 reviews = group.Select(ToReviewResponse).ToList()
@@ -1857,7 +2353,10 @@ public sealed class CirculationController : ControllerBase
             .ToList<object>();
     }
 
-    private async Task<List<ReviewDto>> GetLocalBookReviewsAsync(string? bookId, CancellationToken cancellationToken)
+    private async Task<List<ReviewDto>> GetLocalBookReviewsAsync(
+        string? bookId,
+        IReadOnlyCollection<string> deletedReviewKeys,
+        CancellationToken cancellationToken)
     {
         var logs = await _dbContext.PublishedEventLogs
             .AsNoTracking()
@@ -1866,11 +2365,241 @@ public sealed class CirculationController : ControllerBase
             .Select(item => item.PayloadJson)
             .ToListAsync(cancellationToken);
 
-        return logs
+        var reviews = logs
             .Select(TryReadReview)
             .Where(item => item is not null)
             .Select(item => item!)
             .Where(item => string.IsNullOrWhiteSpace(bookId) || string.Equals(item.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return FilterDeletedReviews(await EnrichReviewAuthorsAsync(reviews, cancellationToken), deletedReviewKeys);
+    }
+
+    private async Task<HashSet<string>> GetDeletedReviewKeysAsync(string? bookId, CancellationToken cancellationToken)
+    {
+        var logs = await _dbContext.PublishedEventLogs
+            .AsNoTracking()
+            .Where(item => item.EventType == "book.review.deleted")
+            .OrderByDescending(item => item.PublishedAt)
+            .Select(item => item.PayloadJson)
+            .ToListAsync(cancellationToken);
+
+        var deletedReviews = logs
+            .Select(TryReadReview)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .Where(item => string.IsNullOrWhiteSpace(bookId) || string.Equals(item.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return deletedReviews
+            .SelectMany(GetReviewLookupKeys)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static List<ReviewDto> FilterDeletedReviews(
+        IEnumerable<ReviewDto> reviews,
+        IReadOnlyCollection<string> deletedReviewKeys)
+    {
+        if (deletedReviewKeys.Count == 0)
+        {
+            return reviews.ToList();
+        }
+
+        return reviews
+            .Where(review => !IsDeletedReview(review, deletedReviewKeys))
+            .ToList();
+    }
+
+    private async Task<bool> IsReviewDeletedAsync(ReviewDto review, CancellationToken cancellationToken)
+    {
+        var deletedKeys = await GetDeletedReviewKeysAsync(review.BookId, cancellationToken);
+        return IsDeletedReview(review, deletedKeys);
+    }
+
+    private static bool IsDeletedReview(ReviewDto review, IReadOnlyCollection<string> deletedReviewKeys)
+    {
+        foreach (var key in GetReviewLookupKeys(review))
+        {
+            if (deletedReviewKeys.Contains(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesReviewKey(ReviewDto review, string reviewKey)
+    {
+        if (string.IsNullOrWhiteSpace(reviewKey))
+        {
+            return false;
+        }
+
+        foreach (var key in GetReviewLookupKeys(review))
+        {
+            if (string.Equals(key, reviewKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesReviewRequest(ReviewDto review, ReviewDeleteRequest? request, string bookId, string reviewKey)
+    {
+        if (request is null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(review.BookId, bookId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReviewId) &&
+            Guid.TryParse(request.ReviewId, out var reviewId) &&
+            review.ReviewId == reviewId)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TransactionId) &&
+            Guid.TryParse(request.TransactionId, out var transactionId) &&
+            review.TransactionId == transactionId)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Id) &&
+            string.Equals(review.Id, request.Id.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var requestFingerprint = string.Join("|",
+            request.BookId ?? bookId,
+            request.UserId ?? string.Empty,
+            request.CardNumber ?? string.Empty,
+            request.Username ?? string.Empty,
+            request.FullName ?? string.Empty,
+            request.Rating,
+            request.Comment ?? string.Empty,
+            TryNormalizeReviewCreatedAt(request.CreatedAt));
+
+        var legacyRequestFingerprint = requestFingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+            ? requestFingerprint[..^1]
+            : requestFingerprint;
+
+        if (string.Equals(reviewKey, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(reviewKey, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var reviewFingerprint = GetReviewFingerprint(review);
+        var legacyReviewFingerprint = reviewFingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase)
+            ? reviewFingerprint[..^1]
+            : reviewFingerprint;
+
+        return string.Equals(reviewFingerprint, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(reviewFingerprint, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(legacyReviewFingerprint, requestFingerprint, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(legacyReviewFingerprint, legacyRequestFingerprint, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetReviewFingerprint(ReviewDto item)
+    {
+        return string.Join("|",
+            item.BookId,
+            item.UserId ?? string.Empty,
+            item.CardNumber ?? string.Empty,
+            item.Username ?? string.Empty,
+            item.FullName ?? string.Empty,
+            item.Rating,
+            item.Comment ?? string.Empty,
+            NormalizeReviewCreatedAt(item.CreatedAt));
+    }
+
+    private static string TryNormalizeReviewCreatedAt(string? createdAt)
+    {
+        if (string.IsNullOrWhiteSpace(createdAt))
+        {
+            return string.Empty;
+        }
+
+        return DateTimeOffset.TryParse(createdAt, out var parsed)
+            ? NormalizeReviewCreatedAt(parsed)
+            : string.Empty;
+    }
+
+    private async Task<List<ReviewDto>> EnrichReviewAuthorsAsync(IEnumerable<ReviewDto> reviews, CancellationToken cancellationToken)
+    {
+        var list = reviews.ToList();
+        var cardNumbers = list
+            .Select(item => item.CardNumber?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (cardNumbers.Count == 0)
+        {
+            return list;
+        }
+
+        Dictionary<string, ReaderIdentityInfo> usersByCard;
+        try
+        {
+            usersByCard = await GetUsersFromIdentityByCardAsync(cardNumbers!, cancellationToken);
+        }
+        catch
+        {
+            return list;
+        }
+
+        if (usersByCard.Count == 0)
+        {
+            return list;
+        }
+
+        return list
+            .Select(review =>
+            {
+                if (string.IsNullOrWhiteSpace(review.CardNumber) ||
+                    !usersByCard.TryGetValue(review.CardNumber.Trim(), out var identity))
+                {
+                    return review;
+                }
+
+                var fullName = !string.IsNullOrWhiteSpace(review.FullName)
+                    ? review.FullName
+                    : !string.IsNullOrWhiteSpace(identity.FullName)
+                        ? identity.FullName
+                        : identity.Username;
+
+                var username = !string.IsNullOrWhiteSpace(review.Username)
+                    ? review.Username
+                    : identity.Username;
+
+                return new ReviewDto
+                {
+                    Id = review.Id,
+                    ReviewId = review.ReviewId,
+                    BookId = review.BookId,
+                    Title = review.Title,
+                    TransactionId = review.TransactionId,
+                    UserId = review.UserId,
+                    CardNumber = review.CardNumber ?? identity.CardNumber,
+                    Username = username,
+                    FullName = fullName,
+                    Rating = review.Rating,
+                    Comment = review.Comment,
+                    CreatedAt = review.CreatedAt
+                };
+            })
             .ToList();
     }
 
@@ -1881,14 +2610,18 @@ public sealed class CirculationController : ControllerBase
 
         foreach (var item in first.Concat(second))
         {
-            var key = !string.IsNullOrWhiteSpace(item.Id)
-                ? $"id:{item.Id}"
-                : $"{item.BookId}|{item.TransactionId}|{item.UserId}|{item.CardNumber}|{item.Rating}|{item.Comment}|{item.CreatedAt:O}";
-
-            if (seen.Add(key))
+            var keys = GetReviewDedupKeys(item).ToList();
+            if (keys.Any(key => seen.Contains(key)))
             {
-                merged.Add(item);
+                continue;
             }
+
+            foreach (var key in keys)
+            {
+                seen.Add(key);
+            }
+
+            merged.Add(item);
         }
 
         return merged;
@@ -1896,9 +2629,65 @@ public sealed class CirculationController : ControllerBase
 
     private static List<object> MergeGroupedReviews(IEnumerable<object> first, IEnumerable<object> second)
     {
-        var firstReviews = ReadReviewsFromJson(JsonSerializer.Serialize(first));
-        var secondReviews = ReadReviewsFromJson(JsonSerializer.Serialize(second));
-        return GroupReviews(MergeReviews(firstReviews, secondReviews));
+        var groups = new Dictionary<string, (string Title, List<ReviewDto> Reviews)>(StringComparer.OrdinalIgnoreCase);
+
+        void AddGroups(IEnumerable<object> source)
+        {
+            var json = JsonSerializer.Serialize(source);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var item in document.RootElement.EnumerateArray())
+            {
+                var bookId = ReadString(item, "bookId", "BookId", "id", "Id");
+                if (string.IsNullOrWhiteSpace(bookId))
+                {
+                    continue;
+                }
+
+                var title = ReadString(item, "title", "Title") ?? bookId;
+                var nested = ReadArray(item, "reviews", "Reviews");
+                var reviews = nested.Count > 0
+                    ? nested.Select(review => TryReadReview(review, bookId)).Where(review => review is not null).Select(review => review!).ToList()
+                    : ReadReviewsFromJson(JsonSerializer.Serialize(item), bookId);
+
+                if (!groups.TryGetValue(bookId, out var existing))
+                {
+                    groups[bookId] = (title, reviews);
+                    continue;
+                }
+
+                existing.Title = string.IsNullOrWhiteSpace(existing.Title) ? title : existing.Title;
+                existing.Reviews.AddRange(reviews);
+                groups[bookId] = existing;
+            }
+        }
+
+        AddGroups(first);
+        AddGroups(second);
+
+        return groups
+            .Select(group =>
+            {
+                var uniqueReviews = DeduplicateReviews(group.Value.Reviews);
+                return new
+                {
+                    bookId = group.Key,
+                    title = group.Value.Title,
+                    averageRating = uniqueReviews.Count > 0 ? Math.Round(uniqueReviews.Average(item => item.Rating), 1) : 0,
+                    reviewCount = uniqueReviews.Count,
+                    reviews = uniqueReviews.Select(ToReviewResponse).ToList()
+                };
+            })
+            .ToList<object>();
     }
 
     private static object ToReviewResponse(ReviewDto item)
@@ -2007,6 +2796,12 @@ public sealed class CirculationController : ControllerBase
 
     private async Task<int?> GetBookIdByIsbnAsync(string isbn, CancellationToken cancellationToken)
     {
+        var normalizedIsbn = NormalizeIsbn(isbn);
+        if (string.IsNullOrWhiteSpace(normalizedIsbn))
+        {
+            return null;
+        }
+
         try
         {
             var client = _httpClientFactory.CreateClient();
@@ -2014,11 +2809,49 @@ public sealed class CirculationController : ControllerBase
             var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/search?q={Uri.EscapeDataString(isbn)}", cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return null;
-            var books = await response.Content.ReadFromJsonAsync<List<System.Text.Json.JsonElement>>(cancellationToken);
-            var book = books?.FirstOrDefault(b => b.TryGetProperty("isbn", out var i) && i.GetString() == isbn);
-            if (book is null || !book.Value.TryGetProperty("id", out var idProp))
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(body))
+            {
                 return null;
-            return idProp.GetInt32();
+            }
+
+            using var document = JsonDocument.Parse(body);
+            var candidateElements = new List<JsonElement>();
+
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                candidateElements.AddRange(document.RootElement.EnumerateArray());
+            }
+            else if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                candidateElements.Add(document.RootElement);
+
+                foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+                {
+                    if (document.RootElement.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+                    {
+                        candidateElements.AddRange(nested.EnumerateArray());
+                    }
+                }
+            }
+
+            foreach (var book in candidateElements)
+            {
+                var candidateIsbn = NormalizeIsbn(ReadString(book, "isbn", "Isbn", "ISBN"));
+                if (!string.Equals(candidateIsbn, normalizedIsbn, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var id = ReadInt(book, "id", "Id", "bookId", "BookId");
+                if (id > 0)
+                {
+                    return id;
+                }
+            }
+
+            return null;
         }
         catch
         {
@@ -2033,13 +2866,22 @@ public sealed class CirculationController : ControllerBase
         {
             var client = _httpClientFactory.CreateClient();
             ForwardAuthorizationHeader(client);
-            // Fetch all books from catalog
-            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            // Prefer the richer products endpoint so N2 can render all N1-managed fields.
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            }
             if (!response.IsSuccessStatusCode)
                 return result;
 
-            var books = await response.Content.ReadFromJsonAsync<List<BookInfo>>(cancellationToken);
-            if (books == null)
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(body))
+                return result;
+
+            using var document = JsonDocument.Parse(body);
+            var books = ReadCatalogBookList(document.RootElement);
+            if (books.Count == 0)
                 return result;
 
             // Filter to only requested book IDs
@@ -2058,6 +2900,187 @@ public sealed class CirculationController : ControllerBase
             // Return empty dict on error
         }
         return result;
+    }
+
+    private async Task<BookInfo?> GetCatalogBookAsync(string bookId, CancellationToken cancellationToken)
+    {
+        if (!int.TryParse(bookId, out var numericBookId) || numericBookId <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient();
+            ForwardAuthorizationHeader(client);
+
+            async Task<BookInfo?> TryReadBookAsync(HttpResponseMessage response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(body))
+                {
+                    return null;
+                }
+
+                using var document = JsonDocument.Parse(body);
+                return FindCatalogBook(document.RootElement, numericBookId);
+            }
+
+            var response = await client.GetAsync($"{CatalogServiceUrl}/api/books/{numericBookId}", cancellationToken);
+            var found = await TryReadBookAsync(response);
+            if (found is not null)
+            {
+                return found;
+            }
+
+            response = await client.GetAsync($"{CatalogServiceUrl}/api/books/products", cancellationToken);
+            found = await TryReadBookAsync(response);
+            if (found is not null)
+            {
+                return found;
+            }
+
+            response = await client.GetAsync($"{CatalogServiceUrl}/api/books", cancellationToken);
+            return await TryReadBookAsync(response);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static List<BookInfo> ReadCatalogBookList(JsonElement root)
+    {
+        var books = new List<BookInfo>();
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                var mapped = MapCatalogBook(item);
+                if (mapped is not null)
+                {
+                    books.Add(mapped);
+                }
+            }
+
+            return books;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            var single = MapCatalogBook(root);
+            if (single is not null)
+            {
+                books.Add(single);
+            }
+
+            foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+            {
+                if (root.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in nested.EnumerateArray())
+                    {
+                        var mapped = MapCatalogBook(item);
+                        if (mapped is not null)
+                        {
+                            books.Add(mapped);
+                        }
+                    }
+                }
+            }
+        }
+
+        return books;
+    }
+
+    private static BookInfo? FindCatalogBook(JsonElement root, int bookId)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+            {
+                var candidateId = ReadInt(item, "id", "Id", "ma", "Ma", "bookId", "BookId");
+                if (candidateId == bookId)
+                {
+                    return MapCatalogBook(item);
+                }
+            }
+
+            return null;
+        }
+
+        var rootId = ReadInt(root, "id", "Id", "ma", "Ma", "bookId", "BookId");
+        if (rootId == bookId)
+        {
+            return MapCatalogBook(root);
+        }
+
+        foreach (var propertyName in new[] { "items", "Items", "data", "Data", "results", "Results", "books", "Books" })
+        {
+            if (root.TryGetProperty(propertyName, out var nested) && nested.ValueKind == JsonValueKind.Array)
+            {
+                var found = FindCatalogBook(nested, bookId);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static BookInfo? MapCatalogBook(JsonElement element)
+    {
+        var id = ReadInt(element, "id", "Id", "ma", "Ma", "bookId", "BookId");
+        if (id <= 0)
+        {
+            return null;
+        }
+
+        return new BookInfo
+        {
+            Id = id,
+            TenSach = ReadString(element, "tenSach", "TenSach", "tenSanPham", "TenSanPham", "title", "Title") ?? "",
+            TacGia = ReadString(element, "tacGia", "TacGia", "author", "Author") ?? "",
+            NhaSanXuat = ReadString(element, "nhaSanXuat", "NhaSanXuat", "publisher", "Publisher") ?? "",
+            TheLoai = ReadString(element, "theLoai", "TheLoai", "genre", "Genre", "category", "Category") ?? "",
+            ImageUrl = ReadString(element, "imageUrl", "ImageUrl", "anhUrl", "AnhUrl", "anhBia", "AnhBia") ?? "",
+            Isbn = ReadString(element, "isbn", "Isbn", "ISBN") ?? "",
+            NamXuatBan = ReadInt(element, "namXuatBan", "NamXuatBan", "yearPublished", "YearPublished"),
+            TomTat = ReadString(element, "tomTat", "TomTat", "moTa", "MoTa", "description", "Description") ?? "",
+            SoLuong = ReadInt(element, "soLuong", "SoLuong"),
+            SoBanDaMuon = ReadInt(element, "soBanDaMuon", "SoBanDaMuon"),
+            SoBanConLai = ReadInt(element, "soBanConLai", "SoBanConLai", "soLuongTonKho", "SoLuongTonKho"),
+            TrangThai = ReadString(element, "trangThai", "TrangThai", "status", "Status") ?? "",
+            DanhGiaTrungBinh = (decimal)ReadDecimal(element, "danhGiaTrungBinh", "DanhGiaTrungBinh", "averageRating", "AverageRating")
+        };
+    }
+
+    private static bool CanBorrowCatalogBook(BookInfo book, out string reason)
+    {
+        if (book.SoBanConLai <= 0)
+        {
+            reason = "Sách đã hết bản có thể mượn.";
+            return false;
+        }
+
+        if (!string.Equals(book.TrangThai?.Trim(), "Có thể mượn", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = string.IsNullOrWhiteSpace(book.TrangThai)
+                ? "Sách chưa có trạng thái cho phép mượn."
+                : $"Sách hiện đang ở trạng thái '{book.TrangThai}' và chưa thể mượn.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     private async Task<Dictionary<string, ReaderIdentityInfo>> GetUsersFromIdentityByCardAsync(
@@ -2239,49 +3262,148 @@ public sealed class CirculationController : ControllerBase
 
     private async Task<int> GetMonthlyBorrowLimitAsync(CancellationToken cancellationToken)
     {
-        var configuredDefault = _configuration.GetValue<int?>("Borrowing:MonthlyLimit") ?? DefaultMonthlyBorrowLimit;
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return policy.MonthlyBorrowLimit;
+    }
+
+    private async Task SetMonthlyBorrowLimitAsync(int monthlyBorrowLimit, CancellationToken cancellationToken)
+    {
+        var currentPolicy = await GetPricePolicyAsync(cancellationToken);
+        var updatedPolicy = currentPolicy with
+        {
+            MonthlyBorrowLimit = Math.Clamp(monthlyBorrowLimit, 1, 100)
+        };
+
+        await SetPricePolicyAsync(updatedPolicy, cancellationToken);
+    }
+
+    private async Task<PricePolicyRequest> GetPricePolicyAsync(CancellationToken cancellationToken)
+    {
+        var configuredDefault = GetConfiguredPricePolicy();
 
         var policyEvent = await _dbContext.PublishedEventLogs
             .AsNoTracking()
-            .Where(item => item.SourceService == "N2.Circulation" && item.EventType == BorrowPolicyEventType)
+            .Where(item =>
+                item.SourceService == "N2.Circulation" &&
+                (item.EventType == PricePolicyEventType || item.EventType == BorrowPolicyEventType))
             .OrderByDescending(item => item.PublishedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (policyEvent is null)
         {
-            return Math.Clamp(configuredDefault, 1, 100);
+            return configuredDefault;
         }
 
         try
         {
             using var document = JsonDocument.Parse(policyEvent.PayloadJson);
-            var root = document.RootElement;
-            var limit = root.TryGetProperty("MonthlyBorrowLimit", out var pascalLimit)
-                ? pascalLimit.GetInt32()
-                : root.TryGetProperty("monthlyBorrowLimit", out var camelLimit)
-                    ? camelLimit.GetInt32()
-                    : configuredDefault;
-
-            return Math.Clamp(limit, 1, 100);
+            return ParsePricePolicy(document.RootElement, configuredDefault);
         }
         catch (JsonException)
         {
-            return Math.Clamp(configuredDefault, 1, 100);
+            return configuredDefault;
         }
     }
 
-    private async Task SetMonthlyBorrowLimitAsync(int monthlyBorrowLimit, CancellationToken cancellationToken)
+    private async Task SetPricePolicyAsync(PricePolicyRequest policy, CancellationToken cancellationToken)
     {
+        var normalized = NormalizePricePolicy(policy);
+
         _dbContext.PublishedEventLogs.Add(new PublishedEventLog
         {
             Id = Guid.NewGuid(),
             SourceService = "N2.Circulation",
-            EventType = BorrowPolicyEventType,
-            PayloadJson = JsonSerializer.Serialize(new { MonthlyBorrowLimit = monthlyBorrowLimit }),
+            EventType = PricePolicyEventType,
+            PayloadJson = JsonSerializer.Serialize(normalized),
             PublishedAt = DateTime.UtcNow
         });
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private PricePolicyRequest GetConfiguredPricePolicy()
+    {
+        return NormalizePricePolicy(new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = _configuration.GetValue<int?>("Borrowing:MonthlyLimit") ?? DefaultMonthlyBorrowLimit,
+            BorrowPricePerBook = _configuration.GetValue<decimal?>("Pricing:BorrowPricePerBook") ?? DefaultBorrowPricePerBook,
+            DailyOverdueFine = _configuration.GetValue<decimal?>("Pricing:DailyOverdueFine") ?? DefaultDailyOverdueFine,
+            LightDamageFine = _configuration.GetValue<decimal?>("Pricing:LightDamageFine") ?? DefaultLightDamageFine,
+            HeavyDamageFine = _configuration.GetValue<decimal?>("Pricing:HeavyDamageFine") ?? DefaultHeavyDamageFine,
+            LostFine = _configuration.GetValue<decimal?>("Pricing:LostFine") ?? DefaultLostFine
+        });
+    }
+
+    private static PricePolicyRequest NormalizePricePolicy(PricePolicyRequest policy)
+    {
+        return new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = Math.Clamp(policy.MonthlyBorrowLimit, 1, 100),
+            BorrowPricePerBook = Math.Clamp(policy.BorrowPricePerBook, 0m, 1_000_000m),
+            DailyOverdueFine = Math.Clamp(policy.DailyOverdueFine, 0m, 1_000_000m),
+            LightDamageFine = Math.Clamp(policy.LightDamageFine, 0m, 1_000_000m),
+            HeavyDamageFine = Math.Clamp(policy.HeavyDamageFine, 0m, 1_000_000m),
+            LostFine = Math.Clamp(policy.LostFine, 0m, 1_000_000m)
+        };
+    }
+
+    private static PricePolicyRequest ParsePricePolicy(JsonElement root, PricePolicyRequest fallback)
+    {
+        return NormalizePricePolicy(new PricePolicyRequest
+        {
+            MonthlyBorrowLimit = TryGetInt32(root, fallback.MonthlyBorrowLimit, "MonthlyBorrowLimit", "monthlyBorrowLimit", "monthly_borrow_limit"),
+            BorrowPricePerBook = TryGetDecimal(root, fallback.BorrowPricePerBook, "BorrowPricePerBook", "borrowPricePerBook", "borrow_price_per_book"),
+            DailyOverdueFine = TryGetDecimal(root, fallback.DailyOverdueFine, "DailyOverdueFine", "dailyOverdueFine", "daily_overdue_fine"),
+            LightDamageFine = TryGetDecimal(root, fallback.LightDamageFine, "LightDamageFine", "lightDamageFine", "light_damage_fine"),
+            HeavyDamageFine = TryGetDecimal(root, fallback.HeavyDamageFine, "HeavyDamageFine", "heavyDamageFine", "heavy_damage_fine"),
+            LostFine = TryGetDecimal(root, fallback.LostFine, "LostFine", "lostFine", "lost_fine")
+        });
+    }
+
+    private static int TryGetInt32(JsonElement root, int fallback, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return fallback;
+    }
+
+    private static decimal TryGetDecimal(JsonElement root, decimal fallback, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!root.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String && decimal.TryParse(value.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return fallback;
     }
 
     private static DateTime NormalizeUtc(DateTime date)
@@ -2294,17 +3416,532 @@ public sealed class CirculationController : ControllerBase
         };
     }
 
+    private static bool TryBuildRevenueWindow(
+        string? period,
+        DateTime? date,
+        DateTime? from,
+        DateTime? to,
+        out DateTime windowStart,
+        out DateTime windowEnd)
+    {
+        windowStart = default;
+        windowEnd = default;
+
+        var normalizedPeriod = period?.Trim().ToLowerInvariant();
+        var referenceDate = NormalizeUtc(date ?? DateTime.UtcNow);
+
+        if (normalizedPeriod is null or "" or "all")
+        {
+            if (from is null && to is null)
+            {
+                return false;
+            }
+
+            if (from is null || to is null)
+            {
+                return false;
+            }
+
+            windowStart = NormalizeUtc(from.Value).Date;
+            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            if (windowEnd <= windowStart)
+            {
+                windowEnd = windowStart.AddDays(1);
+            }
+
+            return true;
+        }
+
+        if (normalizedPeriod == "day")
+        {
+            windowStart = referenceDate.Date;
+            windowEnd = windowStart.AddDays(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "month")
+        {
+            windowStart = new DateTime(referenceDate.Year, referenceDate.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            windowEnd = windowStart.AddMonths(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "year")
+        {
+            windowStart = new DateTime(referenceDate.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            windowEnd = windowStart.AddYears(1);
+            return true;
+        }
+
+        if (normalizedPeriod == "range" && from is not null && to is not null)
+        {
+            windowStart = NormalizeUtc(from.Value).Date;
+            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            if (windowEnd <= windowStart)
+            {
+                windowEnd = windowStart.AddDays(1);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task<object> BuildRevenueSummaryAsync(
+        string? period,
+        DateTime? date,
+        DateTime? from,
+        DateTime? to,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var takeCount = Math.Clamp(take, 1, 200);
+
+        var hasWindow = TryBuildRevenueWindow(period, date, from, to, out var windowStart, out var windowEnd);
+        var revenueRecordsQuery = _dbContext.RevenueRecords
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            revenueRecordsQuery = revenueRecordsQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var totalBorrowRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .Where(item => item.SourceType == "BorrowApproval")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var totalFineRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .Where(item => item.SourceType == "FinePayment")
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var finesQuery = _dbContext.FineCharges
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (hasWindow)
+        {
+            finesQuery = finesQuery.Where(item => item.CreatedAt >= windowStart && item.CreatedAt < windowEnd);
+        }
+
+        var pendingFineAmount = await finesQuery
+            .Where(item => item.PaymentStatus == "PendingApproval" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var unpaidFineAmount = await finesQuery
+            .Where(item => item.PaymentStatus == "Unpaid" && item.PaidAt == null)
+            .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+
+        var recentRevenue = await revenueRecordsQuery
+            .AsNoTracking()
+            .OrderByDescending(item => item.CreatedAt)
+            .Take(takeCount)
+            .Select(item => new
+            {
+                item.Id,
+                item.SourceType,
+                item.ReferenceId,
+                item.UserId,
+                item.CardNumber,
+                item.Amount,
+                item.Description,
+                item.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return new
+        {
+            totalRevenue = totalBorrowRevenue + totalFineRevenue,
+            totalBorrowRevenue,
+            totalFineRevenue,
+            pendingFineAmount,
+            unpaidFineAmount,
+            borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
+            fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
+            recentRevenue
+        };
+    }
+
+    private async Task<IReadOnlyList<object>> BuildTransactionsListAsync(
+        string? userId,
+        string? cardNumber,
+        bool? activeOnly,
+        int? pageSize,
+        bool publicEmbed,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.BorrowTransactions.AsNoTracking();
+
+        if (!publicEmbed && !IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            cardNumber = string.IsNullOrWhiteSpace(tokenCardNumber) ? cardNumber : tokenCardNumber;
+        }
+
+        if (!string.IsNullOrWhiteSpace(userId))
+            query = query.Where(t => t.UserId == userId);
+        if (!string.IsNullOrWhiteSpace(cardNumber))
+            query = query.Where(t => t.CardNumber == cardNumber);
+        if (activeOnly == true)
+            query = query.Where(t => t.ReturnedAt == null && t.Status != "Pending");
+
+        var limit = Math.Clamp(pageSize ?? 100, 1, 200);
+        var result = await query
+            .OrderByDescending(t => t.BorrowedAt)
+            .Take(limit)
+            .Select(t => new {
+                t.Id,
+                t.BookId,
+                t.Isbn,
+                t.UserId,
+                t.CardNumber,
+                t.ReaderName,
+                t.ReaderUsername,
+                BorrowedAt = t.BorrowedAt,
+                DueAt = t.DueAt,
+                ReturnedAt = t.ReturnedAt,
+                FineAmount = t.FineAmount,
+                Status = t.Status == "Pending" ? "Pending" :
+                         t.Status == "ReturnPending" ? "ReturnPending" :
+                         t.Status == "RenewPending" ? "RenewPending" :
+                         t.ReturnedAt != null || t.Status == "Returned" ? "Returned" :
+                         t.DueAt < DateTime.UtcNow ? "Overdue" : "Borrowed"
+            })
+            .ToListAsync(cancellationToken);
+
+        var bookIds = result.Select(r => r.BookId).Distinct().ToList();
+        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
+        var cardNumbers = result
+            .Select(r => r.CardNumber)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var userRefs = result
+            .Select(r => r.UserId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var userGuidRefs = userRefs
+            .Where(value => Guid.TryParse(value, out _))
+            .Select(value => Guid.Parse(value!))
+            .Distinct()
+            .ToList();
+
+        var transactionUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
+                userGuidRefs.Contains(user.Id) ||
+                userRefs.Contains(user.Username))
+            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
+            .ToListAsync(cancellationToken);
+
+        var usersByCard = transactionUsers
+            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
+            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
+        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
+        var cardsNeedingIdentity = result
+            .Where(r => string.IsNullOrWhiteSpace(r.ReaderName) &&
+                        !string.IsNullOrWhiteSpace(r.CardNumber) &&
+                        !usersByCard.ContainsKey(r.CardNumber))
+            .Select(r => r.CardNumber!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(cardsNeedingIdentity, cancellationToken);
+
+        return result.Select(r =>
+        {
+            books.TryGetValue(r.BookId, out var book);
+            var readerName = r.ReaderName ?? "";
+            var readerUsername = r.ReaderUsername ?? "";
+            if (!string.IsNullOrWhiteSpace(r.CardNumber) && usersByCard.TryGetValue(r.CardNumber, out var byCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byCard.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersById.TryGetValue(r.UserId, out var byId))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byId.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.UserId) && usersByUsername.TryGetValue(r.UserId, out var byUsername))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byUsername.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(r.CardNumber) && identityUsersByCard.TryGetValue(r.CardNumber, out var byIdentityCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byIdentityCard.Username;
+            }
+
+            return (object)new {
+                r.Id,
+                r.BookId,
+                Isbn = r.Isbn ?? book?.Isbn ?? "",
+                r.UserId,
+                r.CardNumber,
+                ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
+                ReaderUsername = readerUsername,
+                BorrowedAt = ToIsoUtc(r.BorrowedAt),
+                DueAt = ToIsoUtc(r.DueAt),
+                ReturnedAt = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
+                createdAt = ToIsoUtc(r.BorrowedAt),
+                updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
+                requestDate = ToIsoUtc(r.BorrowedAt),
+                borrowDate = ToIsoUtc(r.BorrowedAt),
+                ngayMuon = ToIsoUtc(r.BorrowedAt),
+                returnDate = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
+                FineAmount = r.FineAmount,
+                Status = r.Status,
+                TenSach = book?.TenSach ?? "",
+                TacGia = book?.TacGia ?? "",
+                NhaSanXuat = book?.NhaSanXuat ?? "",
+                ImageUrl = book?.ImageUrl ?? ""
+            };
+        }).ToList();
+    }
+
+    private async Task<IReadOnlyList<object>> BuildFinesListAsync(bool publicEmbed, CancellationToken cancellationToken)
+    {
+        var finesQuery = _dbContext.FineCharges.AsNoTracking();
+
+        if (!publicEmbed && !IsStaffUser())
+        {
+            var tokenCardNumber = GetTokenCardNumber();
+            var tokenUserId = GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? GetClaimValue("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier")
+                ?? GetClaimValue("http://schemas.microsoft.com/ws/2008/06/identity/claims/nameidentifier")
+                ?? GetClaimValue("sub")
+                ?? GetClaimValue("id")
+                ?? GetClaimValue("userId");
+
+            finesQuery = finesQuery.Where(f =>
+                (!string.IsNullOrWhiteSpace(tokenCardNumber) && f.CardNumber == tokenCardNumber) ||
+                (!string.IsNullOrWhiteSpace(tokenUserId) && f.UserId == tokenUserId));
+        }
+
+        var fines = await finesQuery
+            .OrderByDescending(f => f.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var transactionIds = fines
+            .Select(f => f.BorrowTransactionId)
+            .Distinct()
+            .ToList();
+
+        var relatedTransactions = transactionIds.Count == 0
+            ? new List<BorrowTransaction>()
+            : await _dbContext.BorrowTransactions
+                .AsNoTracking()
+                .Where(t => transactionIds.Contains(t.Id))
+                .Select(t => new BorrowTransaction
+                {
+                    Id = t.Id,
+                    BookId = t.BookId,
+                    Isbn = t.Isbn,
+                    UserId = t.UserId,
+                    CardNumber = t.CardNumber,
+                    ReaderName = t.ReaderName,
+                    ReaderUsername = t.ReaderUsername
+                })
+                .ToListAsync(cancellationToken);
+
+        var bookIds = relatedTransactions
+            .Select(t => t.BookId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct()
+            .ToList();
+        var books = await GetBooksFromCatalogAsync(bookIds, cancellationToken);
+
+        var cardNumbers = fines
+            .Select(f => f.CardNumber)
+            .Concat(relatedTransactions.Select(t => t.CardNumber))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userRefs = fines
+            .Select(f => f.UserId)
+            .Concat(relatedTransactions.Select(t => t.UserId))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var userGuidRefs = userRefs
+            .Where(value => Guid.TryParse(value, out _))
+            .Select(value => Guid.Parse(value!))
+            .Distinct()
+            .ToList();
+
+        var transactionUsers = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                (user.CardNumber != null && cardNumbers.Contains(user.CardNumber)) ||
+                userGuidRefs.Contains(user.Id) ||
+                userRefs.Contains(user.Username))
+            .Select(user => new { user.Id, user.Username, user.FullName, user.CardNumber })
+            .ToListAsync(cancellationToken);
+
+        var usersByCard = transactionUsers
+            .Where(user => !string.IsNullOrWhiteSpace(user.CardNumber))
+            .GroupBy(user => user.CardNumber!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var usersById = transactionUsers.ToDictionary(user => user.Id.ToString(), user => user, StringComparer.OrdinalIgnoreCase);
+        var usersByUsername = transactionUsers.ToDictionary(user => user.Username, user => user, StringComparer.OrdinalIgnoreCase);
+
+        var identityUsersByCard = await GetUsersFromIdentityByCardAsync(
+            cardNumbers.Where(value => !usersByCard.ContainsKey(value)).ToList(),
+            cancellationToken);
+
+        return fines.Select(f =>
+        {
+            var transaction = relatedTransactions.FirstOrDefault(t => t.Id == f.BorrowTransactionId);
+            books.TryGetValue(transaction?.BookId ?? string.Empty, out var book);
+
+            var readerName = transaction?.ReaderName ?? "";
+            var readerUsername = transaction?.ReaderUsername ?? "";
+            var lookupCard = transaction?.CardNumber ?? f.CardNumber;
+
+            if (!string.IsNullOrWhiteSpace(lookupCard) && usersByCard.TryGetValue(lookupCard, out var byCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byCard.FullName) ? byCard.Username : byCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byCard.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersById.TryGetValue(f.UserId, out var byId))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byId.FullName) ? byId.Username : byId.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byId.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(f.UserId) && usersByUsername.TryGetValue(f.UserId, out var byUsername))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byUsername.FullName) ? byUsername.Username : byUsername.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byUsername.Username;
+            }
+            else if (!string.IsNullOrWhiteSpace(lookupCard) && identityUsersByCard.TryGetValue(lookupCard, out var byIdentityCard))
+            {
+                if (string.IsNullOrWhiteSpace(readerName))
+                    readerName = string.IsNullOrWhiteSpace(byIdentityCard.FullName) ? byIdentityCard.Username : byIdentityCard.FullName;
+                if (string.IsNullOrWhiteSpace(readerUsername))
+                    readerUsername = byIdentityCard.Username;
+            }
+
+            return new
+            {
+                f.Id,
+                f.BorrowTransactionId,
+                f.UserId,
+                f.CardNumber,
+                ReaderName = string.IsNullOrWhiteSpace(readerName) ? f.CardNumber ?? f.UserId ?? "" : readerName,
+                ReaderUsername = readerUsername,
+                BookId = transaction?.BookId ?? "",
+                TenSach = book?.TenSach ?? "",
+                TacGia = book?.TacGia ?? "",
+                f.Amount,
+                f.Reason,
+                f.CreatedAt,
+                f.PaymentStatus,
+                f.PaymentRequestedAt,
+                f.PaidAt,
+                IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
+                IsPaymentPending = f.PaymentStatus == "PendingApproval"
+            };
+        }).ToList();
+    }
+
+    private async Task<object> BuildPricePolicySettingsAsync(CancellationToken cancellationToken)
+    {
+        var policy = await GetPricePolicyAsync(cancellationToken);
+        return new
+        {
+            monthlyBorrowLimit = policy.MonthlyBorrowLimit,
+            borrowPricePerBook = policy.BorrowPricePerBook,
+            dailyOverdueFine = policy.DailyOverdueFine,
+            lightDamageFine = policy.LightDamageFine,
+            heavyDamageFine = policy.HeavyDamageFine,
+            lostFine = policy.LostFine
+        };
+    }
+
     private sealed class BookInfo
     {
         public int Id { get; set; }
         public string TenSach { get; set; } = "";
         public string TacGia { get; set; } = "";
         public string NhaSanXuat { get; set; } = "";
+        public string TheLoai { get; set; } = "";
         public string ImageUrl { get; set; } = "";
         public string Isbn { get; set; } = "";
+        public int NamXuatBan { get; set; }
+        public string TomTat { get; set; } = "";
+        public int SoLuong { get; set; }
+        public int SoBanDaMuon { get; set; }
+        public int SoBanConLai { get; set; }
+        public string TrangThai { get; set; } = "";
+        public decimal DanhGiaTrungBinh { get; set; }
     }
 
     private sealed record ReaderIdentityInfo(string CardNumber, string FullName, string Username, string Id, string Email);
+
+    private static bool EventBelongsToReader(
+        string payloadJson,
+        string? tokenCardNumber,
+        string? tokenUserId,
+        IReadOnlyCollection<Guid> transactionIds)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+
+            var eventCardNumber = ReadString(root, "cardNumber", "CardNumber");
+            if (!string.IsNullOrWhiteSpace(tokenCardNumber) &&
+                !string.IsNullOrWhiteSpace(eventCardNumber) &&
+                string.Equals(eventCardNumber, tokenCardNumber, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var eventUserId = ReadString(root, "userId", "UserId");
+            if (!string.IsNullOrWhiteSpace(tokenUserId) &&
+                !string.IsNullOrWhiteSpace(eventUserId) &&
+                string.Equals(eventUserId, tokenUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var transactionIdText = ReadString(root, "transactionId", "TransactionId");
+            return Guid.TryParse(transactionIdText, out var transactionId) && transactionIds.Contains(transactionId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private static ReviewDto? TryReadReview(string payloadJson)
     {
@@ -2356,6 +3993,7 @@ public sealed class CirculationController : ControllerBase
             Id = ReadString(root, "id", "Id", "reviewId", "ReviewId") ?? string.Empty,
             ReviewId = reviewId,
             BookId = bookId,
+            Title = ReadString(root, "title", "Title"),
             TransactionId = transactionId,
             UserId = ReadString(root, "userId", "UserId"),
             CardNumber = ReadString(root, "cardNumber", "CardNumber"),
@@ -2413,6 +4051,25 @@ public sealed class CirculationController : ControllerBase
         return int.TryParse(value.GetString(), out var parsed) ? parsed : 0;
     }
 
+    private static string NormalizeIsbn(string? isbn)
+    {
+        if (string.IsNullOrWhiteSpace(isbn))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(isbn.Length);
+        foreach (var ch in isbn)
+        {
+            if (!char.IsWhiteSpace(ch) && ch != '-')
+            {
+                builder.Append(char.ToUpperInvariant(ch));
+            }
+        }
+
+        return builder.ToString();
+    }
+
     private static double ReadDecimal(JsonElement element, params string[] names)
     {
         if (!TryGetProperty(element, out var value, names))
@@ -2438,11 +4095,83 @@ public sealed class CirculationController : ControllerBase
         return value.EnumerateArray().ToList();
     }
 
+    private static List<ReviewDto> DeduplicateReviews(IEnumerable<ReviewDto> reviews)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unique = new List<ReviewDto>();
+
+        foreach (var review in reviews)
+        {
+            var keys = GetReviewDedupKeys(review).ToList();
+            if (keys.Any(key => seen.Contains(key)))
+            {
+                continue;
+            }
+
+            foreach (var key in keys)
+            {
+                seen.Add(key);
+            }
+
+            unique.Add(review);
+        }
+
+        return unique;
+    }
+
+    private static IEnumerable<string> GetReviewDedupKeys(ReviewDto item)
+    {
+        foreach (var key in GetReviewLookupKeys(item))
+        {
+            yield return key;
+        }
+    }
+
+    private static IEnumerable<string> GetReviewLookupKeys(ReviewDto item)
+    {
+        if (item.TransactionId is not null && item.TransactionId != Guid.Empty)
+        {
+            yield return item.TransactionId.Value.ToString("D");
+            yield return $"tx:{item.TransactionId.Value:D}";
+        }
+
+        if (item.ReviewId != Guid.Empty)
+        {
+            yield return item.ReviewId.ToString("D");
+            yield return $"review:{item.ReviewId:D}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Id))
+        {
+            yield return item.Id.Trim();
+            yield return $"id:{item.Id.Trim()}";
+        }
+
+        var fingerprint = GetReviewFingerprint(item);
+        if (!string.IsNullOrWhiteSpace(fingerprint))
+        {
+            yield return fingerprint;
+
+            if (fingerprint.EndsWith("Z", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return fingerprint[..^1];
+            }
+        }
+    }
+
+    private static string NormalizeReviewCreatedAt(DateTimeOffset createdAt)
+    {
+        return createdAt == DateTimeOffset.MinValue
+            ? string.Empty
+            : createdAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+    }
+
     private sealed class ReviewDto
     {
         public string Id { get; init; } = string.Empty;
         public Guid ReviewId { get; init; }
         public string BookId { get; init; } = string.Empty;
+        public string? Title { get; init; }
         public Guid? TransactionId { get; init; }
         public string? UserId { get; init; }
         public string? CardNumber { get; init; }
@@ -2451,6 +4180,21 @@ public sealed class CirculationController : ControllerBase
         public int Rating { get; init; }
         public string Comment { get; init; } = string.Empty;
         public DateTimeOffset CreatedAt { get; init; }
+    }
+
+    public sealed class ReviewDeleteRequest
+    {
+        public string? BookId { get; init; }
+        public string? Id { get; init; }
+        public string? ReviewId { get; init; }
+        public string? TransactionId { get; init; }
+        public string? UserId { get; init; }
+        public string? CardNumber { get; init; }
+        public string? Username { get; init; }
+        public string? FullName { get; init; }
+        public int Rating { get; init; }
+        public string? Comment { get; init; }
+        public string? CreatedAt { get; init; }
     }
 
     private sealed record CatalogUpdateResult(bool IsSuccess, int StatusCode, string Message)

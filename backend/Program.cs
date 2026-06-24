@@ -237,35 +237,11 @@ app.Use(async (context, next) =>
 
     var path = context.Request.Path.Value ?? "/";
 
-    // Root → wwwroot/index.html
+    // Root should go to login so the host landing page behaves as expected.
     if (path == "/" || path == "/index.html")
     {
-        var rootIndex = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "index.html");
-        if (File.Exists(rootIndex))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(rootIndex);
-            return;
-        }
-    }
-
-    // /ui/{role}/ → wwwroot/ui/{role}/index.html
-    var segments = path.Trim('/').Split('/');
-    if (segments.Length == 2)
-    {
-        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", segments[0], segments[1], "index.html");
-        if (File.Exists(indexPath))
-        {
-            context.Response.ContentType = "text/html; charset=utf-8";
-            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
-            context.Response.Headers.Pragma = "no-cache";
-            context.Response.Headers.Expires = "0";
-            await context.Response.SendFileAsync(indexPath);
-            return;
-        }
+        context.Response.Redirect("http://163.223.210.87/login");
+        return;
     }
 
     // Try direct file
@@ -286,6 +262,36 @@ app.Use(async (context, next) =>
         context.Response.ContentType = ct;
         await context.Response.SendFileAsync(directPath);
         return;
+    }
+
+    // SPA fallback for the librarian UI, including embedded public routes.
+    if (path.StartsWith("/ui/librarian", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "librarian", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
+    }
+
+    // Reader UI also needs a SPA fallback so handoff redirects land on a real page.
+    if (path.StartsWith("/ui/reader", StringComparison.OrdinalIgnoreCase))
+    {
+        var indexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "ui", "reader", "index.html");
+        if (File.Exists(indexPath))
+        {
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            context.Response.Headers.Pragma = "no-cache";
+            context.Response.Headers.Expires = "0";
+            await context.Response.SendFileAsync(indexPath);
+            return;
+        }
     }
 
     await next();

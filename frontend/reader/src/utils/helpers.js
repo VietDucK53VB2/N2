@@ -7,6 +7,31 @@ export function formatDate(d) {
   return dayjs(d).format('DD/MM/YYYY')
 }
 
+export function formatDateTime(d) {
+  if (!d) return '—'
+  const parsed = dayjs(d)
+  return parsed.isValid() ? parsed.format('DD/MM/YYYY HH:mm:ss') : String(d)
+}
+
+export function formatDurationParts(from, to = new Date()) {
+  if (!from || !to) return null
+  const start = new Date(from)
+  const end = new Date(to)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  const diff = Math.max(0, Math.abs(end.getTime() - start.getTime()))
+  const days = Math.floor(diff / 86400000)
+  const hours = Math.floor((diff % 86400000) / 3600000)
+  const minutes = Math.floor((diff % 3600000) / 60000)
+  const seconds = Math.floor((diff % 60000) / 1000)
+  return { days, hours, minutes, seconds, totalMs: diff }
+}
+
+export function formatDurationText(from, to = new Date()) {
+  const parts = formatDurationParts(from, to)
+  if (!parts) return '—'
+  return `${parts.days} ngày ${String(parts.hours).padStart(2, '0')}:${String(parts.minutes).padStart(2, '0')}:${String(parts.seconds).padStart(2, '0')}`
+}
+
 export function formatMoney(v) {
   return new Intl.NumberFormat('vi-VN').format(v) + ' đ'
 }
@@ -55,6 +80,38 @@ export function getDisplayName(user = {}, fallback = 'Độc giả') {
   ) || fallback
 }
 
+export function getDisplayReaderName(record = {}, fallback = 'Độc giả') {
+  return firstNonEmpty(
+    record.readerName,
+    record.ReaderName,
+    record.fullName,
+    record.FullName,
+    record.readerFullName,
+    record.ReaderFullName,
+    record.username,
+    record.Username,
+    record.readerUsername,
+    record.ReaderUsername,
+    record.cardNumber,
+    record.CardNumber,
+    fallback
+  ) || fallback
+}
+
+export function getDisplayBookTitle(book = {}, fallback = '—') {
+  return firstNonEmpty(
+    book.tenSach,
+    book.TenSach,
+    book.title,
+    book.Title,
+    book.bookTitle,
+    book.BookTitle,
+    book.bookName,
+    book.BookName,
+    fallback
+  ) || fallback
+}
+
 export function getDisplayCardNumber(user = {}, fallback = 'Chưa liên kết') {
   return firstNonEmpty(
     user.cardNumber,
@@ -69,6 +126,25 @@ export function getDisplayCardNumber(user = {}, fallback = 'Chưa liên kết') 
     user.user?.CardNumber,
     fallback
   ) || fallback
+}
+
+export function translateFineReason(reason = '') {
+  const text = String(reason || '').trim()
+  if (!text) return 'Phạt trả quá hạn'
+
+  const lower = text.toLowerCase()
+  const overdueMatch = lower.match(/overdue return by\s+(\d+)\s+day/)
+  if (overdueMatch) {
+    const days = overdueMatch[1]
+    return `Phạt trả quá hạn ${days} ngày`
+  }
+
+  if (lower.includes('lost book fee')) return 'Phí mất sách'
+  if (lower.includes('heavydamage')) return 'Phí hư hỏng nặng'
+  if (lower.includes('lightdamage')) return 'Phí hư hỏng nhẹ'
+  if (lower.includes('damage')) return 'Phí hư hỏng sách'
+
+  return text
 }
 
 export function getGenreTags(tenSach) {

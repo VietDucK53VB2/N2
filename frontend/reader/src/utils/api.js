@@ -4,6 +4,7 @@ const BASE = `${window.location.origin}/api/circulation`
 const CATALOG_API = BASE
 const SAME_ORIGIN_BASE = `${window.location.origin}/api/circulation`
 const GATEWAY_CATALOG_BOOKS = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/catalog/books`
+const GATEWAY_CATALOG_BOOKS_PRODUCTS = `${GATEWAY_CATALOG_BOOKS}/products`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 let authBootstrapComplete = false
 
@@ -13,12 +14,19 @@ export function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
 }
 
+export function isAuthSessionReady() {
+  return Boolean(getToken()) || authBootstrapComplete
+}
+
 export function getReaderCard() {
   return localStorage.getItem('readerCard') || getCachedUserInfo().cardNumber || null
 }
 
 export function getCachedUserInfo() {
-  try { return JSON.parse(localStorage.getItem('userInfo') || '{}') }
+  try {
+    const parsed = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  }
   catch { return {} }
 }
 
@@ -70,33 +78,34 @@ function isGenericDisplayName(value) {
 }
 
 function extractDisplayNameFromPayload(payload = {}, fallback = '') {
+  const source = payload && typeof payload === 'object' ? payload : {}
   const givenName = extractFirstNonEmpty(
-    payload.given_name,
-    payload.givenName,
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name']
+    source.given_name,
+    source.givenName,
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname'],
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/given_name']
   )
   const familyName = extractFirstNonEmpty(
-    payload.family_name,
-    payload.familyName,
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
-    payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/family_name']
+    source.family_name,
+    source.familyName,
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname'],
+    source['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/family_name']
   )
 
   const candidates = [
-    payload.fullName,
-    payload.FullName,
+    source.fullName,
+    source.FullName,
     [givenName, familyName].filter(Boolean).join(' ').trim(),
-    payload.name,
-    payload.Name,
-    payload.unique_name,
-    payload.uniqueName,
-    payload.preferred_username,
-    payload.preferredUsername,
-    payload.username,
-    payload.Username,
-    payload.sub,
-    payload.Subject,
+    source.name,
+    source.Name,
+    source.unique_name,
+    source.uniqueName,
+    source.preferred_username,
+    source.preferredUsername,
+    source.username,
+    source.Username,
+    source.sub,
+    source.Subject,
     fallback
   ]
 
@@ -109,17 +118,18 @@ function extractDisplayNameFromPayload(payload = {}, fallback = '') {
 }
 
 function extractCardNumberFromPayload(payload = {}, fallback = '') {
+  const source = payload && typeof payload === 'object' ? payload : {}
   return extractFirstNonEmpty(
-    payload.cardNumber,
-    payload.CardNumber,
-    payload.readerCardNumber,
-    payload.ReaderCardNumber,
-    payload.libraryCardNumber,
-    payload.LibraryCardNumber,
-    payload.libraryCard?.cardNumber,
-    payload.libraryCard?.CardNumber,
-    payload.user?.cardNumber,
-    payload.user?.CardNumber,
+    source.cardNumber,
+    source.CardNumber,
+    source.readerCardNumber,
+    source.ReaderCardNumber,
+    source.libraryCardNumber,
+    source.LibraryCardNumber,
+    source.libraryCard?.cardNumber,
+    source.libraryCard?.CardNumber,
+    source.user?.cardNumber,
+    source.user?.CardNumber,
     fallback
   )
 }
@@ -226,7 +236,7 @@ async function authFetchWithFallback(path, opts = {}) {
   const fallback = `${SAME_ORIGIN_BASE}${path}`
   try {
     const response = await authFetch(primary, opts)
-    if (response.ok || (response.status >= 400 && response.status < 500)) return response
+    if (response.ok || response.status === 401) return response
   } catch {
     // Try the hosted N2 API if the gateway is temporarily unavailable.
   }
@@ -252,10 +262,13 @@ async function fetchJsonFromCandidates(paths = []) {
 }
 
 export async function fetchBooks() {
+  if (!isAuthSessionReady()) return []
   try {
     const data = await fetchJsonFromCandidates([
+      `${window.location.origin}/api/catalog/books`,
       `${window.location.origin}/api/books`,
       GATEWAY_CATALOG_BOOKS,
+      GATEWAY_CATALOG_BOOKS_PRODUCTS,
       `${BASE}/books`
     ])
     return Array.isArray(data) ? data.map(normalizeBook) : []
@@ -264,6 +277,7 @@ export async function fetchBooks() {
 
 export async function fetchTransactions(cardNumber) {
   if (!cardNumber) return []
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback(`/transactions?cardNumber=${encodeURIComponent(cardNumber)}&pageSize=200`)
     if (!r.ok) return []
@@ -272,6 +286,7 @@ export async function fetchTransactions(cardNumber) {
 }
 
 export async function fetchAllTransactions() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/transactions?pageSize=200', { redirectOnAuthError: false })
     if (!r.ok) return []
@@ -280,6 +295,7 @@ export async function fetchAllTransactions() {
 }
 
 export async function fetchEvents() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/events?pageSize=200')
     if (!r.ok) return []
@@ -290,6 +306,7 @@ export async function fetchEvents() {
 }
 
 export async function fetchFines() {
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback('/fines')
     if (!r.ok) return []
@@ -297,15 +314,78 @@ export async function fetchFines() {
   } catch { return [] }
 }
 
-export async function borrowBook(cardNumber, bookId, quantity = 1) {
+export async function fetchPriceSettings() {
+  if (!isAuthSessionReady()) return null
+  try {
+    const r = await authFetchWithFallback('/settings/prices', { redirectOnAuthError: false })
+    if (!r.ok) return null
+    return await r.json()
+  } catch {
+    return null
+  }
+}
+
+export async function fetchFavorites() {
+  if (!isAuthSessionReady()) return null
+  try {
+    const r = await authFetchWithFallback('/favorites', { redirectOnAuthError: false })
+    if (!r.ok) return null
+    return await r.json()
+  } catch {
+    return null
+  }
+}
+
+export async function saveFavoriteBook(book = {}) {
+  if (!book?.id) return null
+  if (!isAuthSessionReady()) return null
+  const r = await authFetchWithFallback('/favorites', {
+    method: 'POST',
+    body: JSON.stringify({
+      isFavorite: true,
+      bookId: String(book.id),
+      tenSach: book.tenSach || book.TenSach || '',
+      tacGia: book.tacGia || book.TacGia || '',
+      imageUrl: book.imageUrl || book.ImageUrl || '',
+      theLoai: book.theLoai || book.TheLoai || '',
+      soBanConLai: Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
+    })
+  })
+  if (!r.ok) return null
+  return await r.json()
+}
+
+export async function removeFavoriteBook(bookId) {
+  if (!bookId) return false
+  if (!isAuthSessionReady()) return false
+  const r = await authFetchWithFallback(`/favorites/${encodeURIComponent(String(bookId))}`, {
+    method: 'DELETE'
+  })
+  return r.ok
+}
+
+export async function borrowBook(cardNumber, bookId, quantity = 1, extra = {}) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  const payload = {
+    cardNumber,
+    bookId: String(bookId),
+    quantity
+  }
+  if (extra?.borrowedAt) payload.BorrowedAt = extra.borrowedAt
+  if (extra?.dueAt) payload.DueAt = extra.dueAt
+  if (extra?.readerName) payload.ReaderName = extra.readerName
+  if (extra?.readerUsername) payload.ReaderUsername = extra.readerUsername
+  if (extra?.userId) payload.UserId = extra.userId
+  if (extra?.isbn) payload.Isbn = extra.isbn
   const r = await authFetchWithFallback('/borrow', {
     method: 'POST',
-    body: JSON.stringify({ cardNumber, bookId: String(bookId), quantity })
+    body: JSON.stringify(payload)
   })
   return r
 }
 
 export async function returnBook(cardNumber, bookId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   const r = await authFetchWithFallback('/return', {
     method: 'POST',
     body: JSON.stringify({ cardNumber, bookId: String(bookId) })
@@ -314,14 +394,62 @@ export async function returnBook(cardNumber, bookId) {
 }
 
 export async function returnTransaction(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/transactions/${transactionId}/return`, { method: 'POST' })
 }
 
+export async function cancelBorrowRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/cancel-borrow`, { method: 'POST' })
+}
+
+export async function cancelReturnRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/cancel-return`, { method: 'POST' })
+}
+
+export async function requestRenewal(transactionId, extraDays = 7, reason = '') {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/renew/request`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ExtraDays: extraDays,
+      Reason: reason,
+      extraDays,
+      reason
+    })
+  })
+}
+
+export async function cancelRenewRequest(transactionId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/transactions/${transactionId}/renew/cancel`, { method: 'POST' })
+}
+
 export async function payFine(fineId) {
+  return requestFinePayment(fineId)
+}
+
+export async function requestFinePayment(fineId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/fines/${fineId}/request-payment`, { method: 'POST' })
+}
+
+export async function approveFinePayment(fineId) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/fines/${fineId}/pay`, { method: 'POST' })
 }
 
+export async function rejectFinePayment(fineId, reason = '') {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
+  return authFetchWithFallback(`/fines/${fineId}/reject-payment`, {
+    method: 'POST',
+    body: JSON.stringify({ Reason: reason, reason })
+  })
+}
+
 export async function reviewBook(bookId, { cardNumber, userId, rating, comment = '' }) {
+  if (!isAuthSessionReady()) return new Response('', { status: 401 })
   return authFetchWithFallback(`/books/${encodeURIComponent(bookId)}/reviews`, {
     method: 'POST',
     body: JSON.stringify({ cardNumber, userId, rating, comment })
@@ -330,6 +458,7 @@ export async function reviewBook(bookId, { cardNumber, userId, rating, comment =
 
 export async function fetchBookReviews(bookId = '') {
   const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : ''
+  if (!isAuthSessionReady()) return []
   try {
     const r = await authFetchWithFallback(`/books/reviews${query}`)
     if (!r.ok) return []
@@ -390,25 +519,43 @@ export async function loadUserProfile() {
 }
 
 export function normalizeBook(b = {}) {
-  const id = b.id ?? b.Id ?? b.bookId ?? b.BookId
-  const tenSach = b.tenSach ?? b.TenSach ?? b.title ?? b.Title ?? '—'
-  const tacGia = b.tacGia ?? b.TacGia ?? b.author ?? b.Author ?? '—'
+  const id = b.id ?? b.Id ?? b.bookId ?? b.BookId ?? b.ma ?? b.Ma
+  const tenSach = b.tenSach ?? b.TenSach ?? b.tenSanPham ?? b.TenSanPham ?? b.title ?? b.Title ?? '?'
+  const tacGia = b.tacGia ?? b.TacGia ?? b.author ?? b.Author ?? '?'
   const nhaSanXuat = b.nhaSanXuat ?? b.NhaSanXuat ?? b.publisher ?? b.Publisher ?? ''
-  const imageUrl = b.imageUrl ?? b.ImageUrl ?? ''
+  const imageUrl = b.imageUrl ?? b.ImageUrl ?? b.anhUrl ?? b.AnhUrl ?? b.anhBia ?? b.AnhBia ?? ''
   const isbn = b.isbn ?? b.Isbn ?? b.ISBN ?? ''
+  const namXuatBan = Number(b.namXuatBan ?? b.NamXuatBan ?? b.yearPublished ?? b.YearPublished ?? 0)
   const soLuong = Number(b.soLuong ?? b.SoLuong ?? 0)
   const soBanDaMuon = Number(b.soBanDaMuon ?? b.SoBanDaMuon ?? 0)
   const soBanConLai = Number(b.soBanConLai ?? b.SoBanConLai ?? Math.max(soLuong - soBanDaMuon, 0))
-  const moTa = b.moTa ?? b.MoTa ?? b.description ?? b.Description ?? ''
+  const moTa = b.moTa ?? b.MoTa ?? b.tomTat ?? b.TomTat ?? b.description ?? b.Description ?? ''
   const giaMuon = Number(b.giaMuon ?? b.GiaMuon ?? b.giaThue ?? b.GiaThue ?? b.price ?? b.Price ?? b.donGia ?? b.DonGia ?? 0)
   const theLoai = b.theLoai ?? b.TheLoai ?? b.genre ?? b.Genre ?? b.category ?? b.Category ?? ''
+  const trangThai = b.trangThai ?? b.TrangThai ?? b.status ?? b.Status ?? ''
+  const danhGiaTrungBinh = Number(b.danhGiaTrungBinh ?? b.DanhGiaTrungBinh ?? b.averageRating ?? b.AverageRating ?? 0)
 
   return {
     id, tenSach, tacGia, nhaSanXuat, imageUrl, isbn, theLoai,
-    soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon
+    namXuatBan, soLuong, soBanDaMuon, soBanConLai, moTa, giaMuon,
+    trangThai, danhGiaTrungBinh
   }
 }
 
+export function canBorrowBook(book = {}) {
+  const remaining = Number(book.soBanConLai ?? book.SoBanConLai ?? 0)
+  const status = String(book.trangThai ?? book.TrangThai ?? '').trim()
+  const normalizedStatus = status
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  return remaining > 0 && (
+    !normalizedStatus ||
+    normalizedStatus.includes('muon') ||
+    normalizedStatus.includes('available') ||
+    normalizedStatus.includes('co the')
+  )
+}
 export function normalizeEvent(e = {}) {
   return {
     id: e.Id || e.id || '',

@@ -44,11 +44,13 @@ namespace N2.Circulation.Api.Data.Migrations
                 b.Property<string>("CardNumber").HasMaxLength(32);
                 b.Property<DateTime>("CreatedAt");
                 b.Property<DateTime?>("PaidAt");
+                b.Property<DateTime?>("PaymentRequestedAt");
+                b.Property<string>("PaymentStatus").IsRequired().HasMaxLength(32);
                 b.Property<string>("Reason").IsRequired().HasMaxLength(256);
                 b.Property<string>("UserId").IsRequired().HasMaxLength(64);
 
                 b.HasKey("Id");
-                b.HasIndex("UserId", "PaidAt");
+                b.HasIndex("UserId", "PaymentStatus", "PaidAt");
 
                 b.ToTable("FineCharges");
             });

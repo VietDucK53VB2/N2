@@ -26,6 +26,21 @@ public sealed record BorrowPolicyRequest
     public int MonthlyBorrowLimit { get; init; } = 5;
 }
 
+public sealed record PricePolicyRequest
+{
+    public int MonthlyBorrowLimit { get; init; } = 5;
+
+    public decimal BorrowPricePerBook { get; init; } = 5000m;
+
+    public decimal DailyOverdueFine { get; init; } = 5000m;
+
+    public decimal LightDamageFine { get; init; } = 20000m;
+
+    public decimal HeavyDamageFine { get; init; } = 100000m;
+
+    public decimal LostFine { get; init; } = 100000m;
+}
+
 public sealed record TransactionRejectRequest
 {
     public string? Reason { get; init; }

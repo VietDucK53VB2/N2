@@ -8,7 +8,7 @@ public sealed class HomeController : ControllerBase
     [HttpGet("/")]
     public IActionResult Index()
     {
-        return Redirect("/swagger/index.html");
+        return Redirect("http://163.223.210.87/login");
     }
 
     [HttpGet("/ping")]
@@ -21,7 +21,7 @@ public sealed class HomeController : ControllerBase
     public IActionResult Login()
     {
         var query = Request.QueryString.HasValue ? Request.QueryString.Value : string.Empty;
-        return Redirect($"/ui/librarian/{query}#/");
+        return Redirect($"http://163.223.210.87/login{query}");
     }
 
     [HttpGet("/ui/librarian/ping")]
