@@ -4,7 +4,7 @@ import {
   fetchBooks, fetchTransactions, fetchAllTransactions,
   fetchEvents, fetchFines, fetchPriceSettings, fetchFavorites, saveFavoriteBook, removeFavoriteBook,
   getReaderCard, getCachedUserInfo,
-  loadUserProfile as loadProfile, normalizeEvent
+  loadUserProfile as loadProfile, normalizeEvent, getBookImageUrl
 } from '@/utils/api'
 
 export const useAppStore = defineStore('app', () => {
@@ -351,10 +351,26 @@ export const useAppStore = defineStore('app', () => {
   async function loadBooks() {
     const data = await fetchBooks()
     books.value = Array.isArray(data) && data.length ? data : fallbackBooks
+    enrichCartItemsFromBooks()
   }
 
   function persistCart() {
     localStorage.setItem('readerCartItems', JSON.stringify(cartItems.value))
+  }
+
+  function enrichCartItemsFromBooks() {
+    if (!cartItems.value.length || !books.value.length) return
+    const bookMap = new Map(books.value.map(book => [String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? ''), book]))
+    let changed = false
+    cartItems.value = cartItems.value.map(item => {
+      const book = bookMap.get(String(item.id))
+      if (!book) return item
+      const imageUrl = getBookImageUrl(item) || getBookImageUrl(book)
+      if (!imageUrl || imageUrl === item.imageUrl) return item
+      changed = true
+      return { ...item, imageUrl }
+    })
+    if (changed) persistCart()
   }
 
   function addHoursToLocalIso(hours) {
@@ -374,7 +390,7 @@ export const useAppStore = defineStore('app', () => {
         id: book.id,
         tenSach: book.tenSach || book.TenSach || '',
         tacGia: book.tacGia || book.TacGia || '',
-        imageUrl: book.imageUrl || book.ImageUrl || '',
+        imageUrl: getBookImageUrl(book),
         nhaSanXuat: book.nhaSanXuat || book.NhaSanXuat || '',
         isbn: book.isbn || book.Isbn || book.ISBN || '',
         namXuatBan: Number(book.namXuatBan ?? book.NamXuatBan ?? 0),

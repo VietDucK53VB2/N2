@@ -30,6 +30,44 @@ export function getCachedUserInfo() {
   catch { return {} }
 }
 
+export function resolveAssetUrl(value = '') {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) return raw
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${window.location.origin}${path}`
+}
+
+export function getBookImageUrl(book = {}) {
+  return resolveAssetUrl(
+    book.imageUrl ??
+    book.ImageUrl ??
+    book.anhUrl ??
+    book.AnhUrl ??
+    book.anhBia ??
+    book.AnhBia ??
+    book.coverUrl ??
+    book.CoverUrl ??
+    book.coverImage ??
+    book.CoverImage ??
+    book.coverImageUrl ??
+    book.CoverImageUrl ??
+    book.thumbnailUrl ??
+    book.ThumbnailUrl ??
+    book.hinhAnh ??
+    book.HinhAnh ??
+    book.hinhAnhUrl ??
+    book.HinhAnhUrl ??
+    book.urlAnh ??
+    book.UrlAnh ??
+    book.image ??
+    book.Image ??
+    book.picture ??
+    book.Picture ??
+    ''
+  )
+}
+
 export function parseJwt(token) {
   try {
     const b = token.split('.')[1]
@@ -523,7 +561,7 @@ export function normalizeBook(b = {}) {
   const tenSach = b.tenSach ?? b.TenSach ?? b.tenSanPham ?? b.TenSanPham ?? b.title ?? b.Title ?? '?'
   const tacGia = b.tacGia ?? b.TacGia ?? b.author ?? b.Author ?? '?'
   const nhaSanXuat = b.nhaSanXuat ?? b.NhaSanXuat ?? b.publisher ?? b.Publisher ?? ''
-  const imageUrl = b.imageUrl ?? b.ImageUrl ?? b.anhUrl ?? b.AnhUrl ?? b.anhBia ?? b.AnhBia ?? ''
+  const imageUrl = getBookImageUrl(b)
   const isbn = b.isbn ?? b.Isbn ?? b.ISBN ?? ''
   const namXuatBan = Number(b.namXuatBan ?? b.NamXuatBan ?? b.yearPublished ?? b.YearPublished ?? 0)
   const soLuong = Number(b.soLuong ?? b.SoLuong ?? 0)
