@@ -110,9 +110,10 @@
           <v-menu>
             <template #activator="{ props }">
               <v-btn v-bind="props" variant="flat" rounded="xl" class="profile-pill">
-                <v-avatar size="34" class="profile-pill__avatar" :image="avatarUrl || undefined">
-                  <span v-if="!avatarUrl">{{ initials }}</span>
-                </v-avatar>
+                <span class="profile-pill__avatar">
+                  <v-img v-if="avatarUrl" :src="avatarUrl" cover height="100%" width="100%" />
+                  <span v-else>{{ initials }}</span>
+                </span>
                 <div class="profile-pill__meta">
                   <span class="profile-pill__name">{{ displayName }}</span>
                   <span class="profile-pill__role">{{ userRoleLabel }}</span>
@@ -462,7 +463,14 @@ watch(
 }
 
 .profile-pill__avatar {
+  width: 34px;
+  height: 34px;
   margin-right: 10px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
   background: linear-gradient(135deg, #065f46, #047857) !important;
   color: white !important;
   font-weight: 700;
