@@ -1,1 +1,0 @@
-import{o as t,at as s,s as e,A as n}from"./index-C2RFA_ma.js";function i(){const o=e(!1);return t(()=>{window.requestAnimationFrame(()=>{o.value=!0})}),{ssrBootStyles:n(()=>o.value?void 0:{transition:"none !important"}),isBooted:s(o)}}export{i as u};

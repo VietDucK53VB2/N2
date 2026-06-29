@@ -30,46 +30,6 @@ export function getCachedUserInfo() {
   catch { return {} }
 }
 
-function normalizeIdentity(value = '') {
-  return String(value || '').trim().toLowerCase()
-}
-
-function avatarUserKey(info = {}) {
-  return normalizeIdentity(
-    info.cardNumber ||
-    info.CardNumber ||
-    info.readerCard ||
-    info.ReaderCard ||
-    info.username ||
-    info.Username ||
-    info.email ||
-    info.Email ||
-    localStorage.getItem('readerCard') ||
-    'anonymous'
-  ) || 'anonymous'
-}
-
-function readAvatarMap() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem('readerAvatarsByUser') || '{}')
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-export function saveReaderAvatarForUser(info = {}, avatarUrl = '') {
-  const value = String(avatarUrl || '').trim()
-  if (!value) return
-  const map = readAvatarMap()
-  map[avatarUserKey(info)] = value
-  localStorage.setItem('readerAvatarsByUser', JSON.stringify(map))
-}
-
-export function getReaderAvatarForUser(info = {}) {
-  return readAvatarMap()[avatarUserKey(info)] || ''
-}
-
 function withPreservedAvatar(next = {}, fallback = getCachedUserInfo()) {
   const avatarUrl =
     next.avatarUrl ||
@@ -80,8 +40,6 @@ function withPreservedAvatar(next = {}, fallback = getCachedUserInfo()) {
     fallback.AvatarUrl ||
     fallback.avatar ||
     fallback.Avatar ||
-    getReaderAvatarForUser(next) ||
-    getReaderAvatarForUser(fallback) ||
     ''
   return avatarUrl ? { ...next, avatarUrl, AvatarUrl: avatarUrl } : next
 }
@@ -242,10 +200,10 @@ function saveAuthSession(token, cardNumber = '') {
   const cached = getCachedUserInfo()
   localStorage.setItem('userInfo', JSON.stringify(withPreservedAvatar({
     ...cached,
-    fullName: username || extractDisplayNameFromPayload(cached, normalizedCardNumber),
-    username: username || cached.username || normalizedCardNumber,
-    role: role || cached.role,
-    cardNumber: normalizedCardNumber || cached.cardNumber || '',
+    fullName: extractDisplayNameFromPayload(cached, username || normalizedCardNumber),
+    username: cached.username || username || normalizedCardNumber,
+    role: cached.role || role,
+    cardNumber: cached.cardNumber || normalizedCardNumber || '',
   }, cached)))
   return true
 }

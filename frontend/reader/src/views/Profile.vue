@@ -173,7 +173,7 @@
 <script setup>
 import { ref, computed, reactive } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { requestFinePayment, saveReaderAvatarForUser } from '@/utils/api'
+import { requestFinePayment } from '@/utils/api'
 import { getInitials, getDisplayCardNumber, formatDate, formatMoney, translateFineReason } from '@/utils/helpers'
 
 const store = useAppStore()
@@ -238,7 +238,6 @@ function onAvatarPicked(event) {
       avatarUrl: String(reader.result || ''),
       AvatarUrl: String(reader.result || '')
     }
-    saveReaderAvatarForUser(next, next.avatarUrl)
     localStorage.setItem('userInfo', JSON.stringify(next))
     store.userInfo = next
     showMessage('Đã cập nhật ảnh đại diện.')
