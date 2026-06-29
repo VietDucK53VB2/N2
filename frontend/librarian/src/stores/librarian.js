@@ -3,9 +3,10 @@ import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
-const IDENTITY_REPORT_API = `${window.location.origin}/api/identity/Report/dashboard`
+const N3_API_ORIGIN = window.location.origin.replace(/:\d+$/, ':5000')
+const IDENTITY_REPORT_API = `${N3_API_ORIGIN}/api/identity/Report/dashboard`
 const N3_LOGIN_URL = `${window.location.origin}/login`
-const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
+const HANDOFF_REDEEM_URL = `${N3_API_ORIGIN}/api/identity/Auth/handoff/redeem`
 
 function getToken() {
   return localStorage.getItem('authToken') || localStorage.getItem('token')
