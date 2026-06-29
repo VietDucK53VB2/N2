@@ -598,6 +598,7 @@ export const useAppStore = defineStore('app', () => {
         '',
       avatarUrl: info?.avatarUrl || info?.AvatarUrl || cached?.avatarUrl || cached?.AvatarUrl || cached?.avatar || cached?.Avatar || ''
     }
+    if (userInfo.value.avatarUrl) userInfo.value.AvatarUrl = userInfo.value.avatarUrl
     favorites.value = loadFavoritesForUser(userInfo.value)
     await loadFavoritesFromServer(userInfo.value)
     return info
