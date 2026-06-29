@@ -11,10 +11,9 @@
         <!-- Profile Card -->
         <v-card rounded="xl" elevation="1" class="overflow-hidden mb-5">
           <div class="profile-cover">
-            <div class="profile-avatar">
-              <v-img v-if="avatarUrl" :src="avatarUrl" cover height="100%" width="100%" />
-              <span v-else>{{ initials }}</span>
-            </div>
+            <v-avatar size="96" class="profile-avatar" :image="avatarUrl || undefined">
+              <span v-if="!avatarUrl">{{ initials }}</span>
+            </v-avatar>
             <button class="avatar-upload-btn" type="button" @click="pickAvatar">
               <v-icon size="18">mdi-camera</v-icon>
               Đổi ảnh
@@ -313,13 +312,7 @@ function copyCard() {
   position: absolute;
   bottom: -48px;
   left: 28px;
-  width: 96px;
-  height: 96px;
   border: 4px solid white;
-  border-radius: 50%;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
   background: linear-gradient(135deg, #0f766e, #047857);
   color: white;
   font-size: 28px;
