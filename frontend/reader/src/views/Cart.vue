@@ -343,8 +343,8 @@ onMounted(() => store.loadAll())
   justify-content: center;
 }
 .book-cover {
-  width: 100px;
-  height: 100px;
+  width: 76px;
+  height: 112px;
   border-radius: 12px;
   overflow: hidden;
   display: grid;
