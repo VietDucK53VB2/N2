@@ -395,6 +395,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const books = ref([])
   const transactions = ref([])
   const fines = ref([])
+  const dashboardStats = ref(null)
   const revenueSummary = ref(null)
   const priceSettings = ref(null)
   const loading = ref(false)
@@ -496,6 +497,15 @@ export const useLibrarianStore = defineStore('librarian', () => {
       if (r.ok) revenueSummary.value = await r.json()
     } catch {}
   }
+  async function loadDashboardStats() {
+    try {
+      const r = await apiFetch(`${CIRC_API}/reports/dashboard`)
+      if (r.ok) dashboardStats.value = await r.json()
+      return dashboardStats.value
+    } catch {
+      return dashboardStats.value
+    }
+  }
   async function loadTransactions() {
     loading.value = true
     try {
@@ -552,7 +562,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
   async function payFine(id) { const r = await apiFetch(`${CIRC_API}/fines/${id}/pay`, { method: 'POST' }); if (r.ok) await loadFines(); return r }
-  async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary(), loadPriceSettings()]) }
+  async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary(), loadPriceSettings(), loadDashboardStats()]) }
 
   function bookTitleOf(record = {}) {
     const bookId = normalizeBookId(bookIdOf(record))
@@ -581,12 +591,12 @@ export const useLibrarianStore = defineStore('librarian', () => {
   }
 
   return {
-    books, transactions, fines, revenueSummary, priceSettings, loading,
+    books, transactions, fines, dashboardStats, revenueSummary, priceSettings, loading,
     embedMode: isEmbedMode(),
     hasAuthToken,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,
-    loadBooks, loadTransactions, loadFines, loadRevenueSummary, loadPriceSettings, savePriceSettings, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
+    loadBooks, loadTransactions, loadFines, loadDashboardStats, loadRevenueSummary, loadPriceSettings, savePriceSettings, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
   }
 })

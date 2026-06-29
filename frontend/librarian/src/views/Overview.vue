@@ -223,10 +223,11 @@ async function loadCatalogBooks() {
 }
 
 const allTx = computed(() => [...store.transactions])
+const dashboardStats = computed(() => store.dashboardStats || {})
 
 const totalReaders = computed(() => new Set(allTx.value.map(tx => String(tx.CardNumber || tx.cardNumber || '')).filter(Boolean)).size)
 const totalCards = computed(() => totalReaders.value)
-const totalLoans = computed(() => allTx.value.length)
+const totalLoans = computed(() => Number(dashboardStats.value.totalBorrows ?? dashboardStats.value.TotalBorrows ?? allTx.value.length))
 const totalBooks = computed(() => catalogBooks.value.length)
 
 const stats = computed(() => ([
@@ -266,6 +267,24 @@ const topCategories = computed(() => {
 })
 
 const monthlyBorrowSeries = computed(() => {
+  const trend = dashboardStats.value.borrowingTrends || dashboardStats.value.BorrowingTrends
+  if (Array.isArray(trend) && trend.length) {
+    const items = trend.slice(-6).map(item => {
+      const key = item.month || item.Month || ''
+      const value = Number(item.borrows ?? item.Borrows ?? 0)
+      return {
+        label: dayjs(`${key}-01`).isValid() ? dayjs(`${key}-01`).format('MMM') : key,
+        value,
+        height: 0
+      }
+    })
+    const max = Math.max(1, ...items.map(item => item.value))
+    return items.map(item => ({
+      ...item,
+      height: Math.max(8, Math.round((item.value / max) * 100))
+    }))
+  }
+
   const year = dayjs().year()
   const months = Array.from({ length: 6 }, (_, i) => {
     const month = i + 1
@@ -285,6 +304,23 @@ const monthlyBorrowSeries = computed(() => {
 })
 
 const topBorrowedBooks = computed(() => {
+  const summaryTop = dashboardStats.value.topBorrowedBooks || dashboardStats.value.TopBorrowedBooks
+  if (Array.isArray(summaryTop) && summaryTop.length) {
+    return summaryTop.map(item => {
+      const id = String(item.bookId ?? item.BookId ?? '')
+      const count = Number(item.borrowCount ?? item.BorrowCount ?? 0)
+      const percent = Number(item.percentage ?? item.Percentage ?? 0)
+      const match = catalogBooks.value.find(book => String(book.id) === id)
+      return {
+        id,
+        title: item.bookName || item.BookName || match?.title || `SÃ¡ch #${id}`,
+        author: match?.author || 'KhÃ´ng rÃµ tÃ¡c giáº£',
+        count,
+        percent: Math.max(12, percent || 0)
+      }
+    }).slice(0, 5)
+  }
+
   const counts = new Map()
   for (const tx of allTx.value) {
     const id = String(tx.BookId || tx.bookId || '')
