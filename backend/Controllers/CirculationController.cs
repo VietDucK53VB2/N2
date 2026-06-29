@@ -1684,6 +1684,8 @@ public sealed class CirculationController : ControllerBase
             review.FullName,
             review.Rating,
             review.Comment,
+            review.CreatedAt,
+            ReviewKey = requestedReviewKey,
             DeletedAt = DateTimeOffset.UtcNow,
             DeletedBy = GetClaimValue(ClaimTypes.NameIdentifier) ?? GetClaimValue("sub"),
             DeletedByName = GetClaimValue("fullName") ?? GetClaimValue(ClaimTypes.Name) ?? GetClaimValue("username")
@@ -2490,6 +2492,12 @@ public sealed class CirculationController : ControllerBase
             return false;
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ReviewKey) &&
+            MatchesReviewKey(review, request.ReviewKey.Trim()))
+        {
+            return true;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ReviewId) &&
             Guid.TryParse(request.ReviewId, out var reviewId) &&
             review.ReviewId == reviewId)
@@ -2627,7 +2635,8 @@ public sealed class CirculationController : ControllerBase
                     FullName = fullName,
                     Rating = review.Rating,
                     Comment = review.Comment,
-                    CreatedAt = review.CreatedAt
+                    CreatedAt = review.CreatedAt,
+                    ReviewKey = review.ReviewKey
                 };
             })
             .ToList();
@@ -4047,7 +4056,8 @@ public sealed class CirculationController : ControllerBase
             FullName = ReadString(root, "fullName", "FullName"),
             Rating = Math.Clamp(ReadInt(root, "rating", "Rating"), 0, 5),
             Comment = ReadString(root, "comment", "Comment") ?? string.Empty,
-            CreatedAt = createdAt
+            CreatedAt = createdAt,
+            ReviewKey = ReadString(root, "reviewKey", "ReviewKey")
         };
     }
 
@@ -4175,6 +4185,11 @@ public sealed class CirculationController : ControllerBase
 
     private static IEnumerable<string> GetReviewLookupKeys(ReviewDto item)
     {
+        if (!string.IsNullOrWhiteSpace(item.ReviewKey))
+        {
+            yield return item.ReviewKey.Trim();
+        }
+
         if (item.TransactionId is not null && item.TransactionId != Guid.Empty)
         {
             yield return item.TransactionId.Value.ToString("D");
@@ -4226,6 +4241,7 @@ public sealed class CirculationController : ControllerBase
         public int Rating { get; init; }
         public string Comment { get; init; } = string.Empty;
         public DateTimeOffset CreatedAt { get; init; }
+        public string? ReviewKey { get; init; }
     }
 
     public sealed class ReviewDeleteRequest
@@ -4241,6 +4257,7 @@ public sealed class CirculationController : ControllerBase
         public int Rating { get; init; }
         public string? Comment { get; init; }
         public string? CreatedAt { get; init; }
+        public string? ReviewKey { get; init; }
     }
 
     private sealed record CatalogUpdateResult(bool IsSuccess, int StatusCode, string Message)
