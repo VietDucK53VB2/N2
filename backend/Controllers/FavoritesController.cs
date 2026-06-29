@@ -34,7 +34,7 @@ public sealed class FavoritesController : ControllerBase
             .OrderByDescending(item => item.UpdatedAt)
             .Select(item => new
             {
-                item.Id,
+                favoriteId = item.Id,
                 item.UserKey,
                 item.UserId,
                 item.CardNumber,
@@ -123,7 +123,7 @@ public sealed class FavoritesController : ControllerBase
 
         return Ok(new
         {
-            item.Id,
+            favoriteId = item.Id,
             item.UserKey,
             item.UserId,
             item.CardNumber,
