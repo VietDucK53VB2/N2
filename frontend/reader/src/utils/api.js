@@ -30,20 +30,6 @@ export function getCachedUserInfo() {
   catch { return {} }
 }
 
-function withPreservedAvatar(next = {}, fallback = getCachedUserInfo()) {
-  const avatarUrl =
-    next.avatarUrl ||
-    next.AvatarUrl ||
-    next.avatar ||
-    next.Avatar ||
-    fallback.avatarUrl ||
-    fallback.AvatarUrl ||
-    fallback.avatar ||
-    fallback.Avatar ||
-    ''
-  return avatarUrl ? { ...next, avatarUrl, AvatarUrl: avatarUrl } : next
-}
-
 export function resolveAssetUrl(value = '') {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -198,13 +184,13 @@ function saveAuthSession(token, cardNumber = '') {
   if (normalizedCardNumber) localStorage.setItem('readerCard', normalizedCardNumber)
   if (role) localStorage.setItem('role', role)
   const cached = getCachedUserInfo()
-  localStorage.setItem('userInfo', JSON.stringify(withPreservedAvatar({
+  localStorage.setItem('userInfo', JSON.stringify({
     ...cached,
     fullName: extractDisplayNameFromPayload(cached, username || normalizedCardNumber),
     username: cached.username || username || normalizedCardNumber,
     role: cached.role || role,
     cardNumber: cached.cardNumber || normalizedCardNumber || '',
-  }, cached)))
+  }))
   return true
 }
 
@@ -525,7 +511,7 @@ export async function loadUserProfile() {
   const c = getCachedUserInfo()
   const fallbackName = extractDisplayNameFromPayload(c, '')
   const fallbackCardNumber = extractCardNumberFromPayload(c, '')
-  const u = withPreservedAvatar({
+  const u = {
     fullName: extractDisplayNameFromPayload(p, fallbackName || fallbackCardNumber || 'Độc giả'),
     username: extractFirstNonEmpty(
       c.username,
@@ -546,7 +532,7 @@ export async function loadUserProfile() {
     role: extractFirstNonEmpty(c.role, p?.role, p?.Role, 'Reader'),
     cardNumber: extractCardNumberFromPayload(p, c.cardNumber || localStorage.getItem('readerCard') || ''),
     createdAt: extractFirstNonEmpty(c.createdAt, p?.createdAt, p?.CreatedAt)
-  }, c)
+  }
   localStorage.setItem('userInfo', JSON.stringify(u))
   if (u.cardNumber) localStorage.setItem('readerCard', u.cardNumber)
 
@@ -555,14 +541,14 @@ export async function loadUserProfile() {
     const r = await authFetch(`${ID3_API}/api/User/profile`, { redirectOnAuthError: false })
     if (!r.ok) return u
     const d = await r.json()
-    const a = withPreservedAvatar({
+    const a = {
       fullName: extractDisplayNameFromPayload(d, u.fullName),
       username: extractFirstNonEmpty(d.username, d.Username, d.preferred_username, d.preferredUsername, d.name, d.Name, u.username),
       email: extractFirstNonEmpty(d.email, d.Email, u.email),
       role: extractFirstNonEmpty(d.role, d.Role, u.role),
       cardNumber: extractCardNumberFromPayload(d, u.cardNumber),
       createdAt: extractFirstNonEmpty(d.createdAt, d.CreatedAt, u.createdAt)
-    }, u)
+    }
     if (!a.fullName) a.fullName = a.username || a.cardNumber || u.fullName
     if (a.cardNumber) localStorage.setItem('readerCard', a.cardNumber)
     localStorage.setItem('userInfo', JSON.stringify(a))
