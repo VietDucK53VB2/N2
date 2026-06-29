@@ -198,11 +198,12 @@ function normalizeBook(item = {}) {
   const author = item.tacGia ?? item.TacGia ?? item.author ?? item.Author ?? '?'
   const category = item.theLoai ?? item.TheLoai ?? item.genre ?? item.Genre ?? item.category ?? item.Category ?? 'Ch?a ph?n lo?i'
   const imageUrl = item.imageUrl ?? item.ImageUrl ?? item.anhUrl ?? item.AnhUrl ?? item.anhBia ?? item.AnhBia ?? ''
+  const quantity = Number(item.soLuong ?? item.SoLuong ?? item.quantity ?? item.Quantity ?? 0)
   const available = Number(item.soBanConLai ?? item.SoBanConLai ?? 0)
   const status = item.trangThai ?? item.TrangThai ?? item.status ?? item.Status ?? ''
   const rating = Number(item.danhGiaTrungBinh ?? item.DanhGiaTrungBinh ?? item.averageRating ?? item.AverageRating ?? 0)
   const year = Number(item.namXuatBan ?? item.NamXuatBan ?? 0)
-  return { id: String(id), title, author, category, imageUrl, available, status, rating, year }
+  return { id: String(id), title, author, category, imageUrl, quantity, available, status, rating, year }
 }
 
 async function loadCatalogBooks() {
@@ -224,11 +225,20 @@ async function loadCatalogBooks() {
 
 const allTx = computed(() => [...store.transactions])
 const dashboardStats = computed(() => store.dashboardStats || {})
+const identityStats = computed(() => store.identityStats || {})
 
-const totalReaders = computed(() => new Set(allTx.value.map(tx => String(tx.CardNumber || tx.cardNumber || '')).filter(Boolean)).size)
-const totalCards = computed(() => totalReaders.value)
+const totalReaders = computed(() => Number(
+  identityStats.value.userStats?.totalUsers ??
+  identityStats.value.UserStats?.TotalUsers ??
+  new Set(allTx.value.map(tx => String(tx.CardNumber || tx.cardNumber || '')).filter(Boolean)).size
+))
+const totalCards = computed(() => Number(
+  identityStats.value.cardStats?.totalCards ??
+  identityStats.value.CardStats?.TotalCards ??
+  totalReaders.value
+))
 const totalLoans = computed(() => Number(dashboardStats.value.totalBorrows ?? dashboardStats.value.TotalBorrows ?? allTx.value.length))
-const totalBooks = computed(() => catalogBooks.value.length)
+const totalBooks = computed(() => catalogBooks.value.reduce((sum, book) => sum + Number(book.quantity || 0), 0))
 
 const stats = computed(() => ([
   { title: 'Tổng số độc giả', value: totalReaders.value, color: '#275f58', bg: '#e8f4f1', icon: FileTextOutlined, className: 'accent-left' },

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 const CIRC_API = `${window.location.origin}/api/circulation`
 const CATALOG_API = `${window.location.origin}/api/catalog/books`
+const IDENTITY_REPORT_API = `${window.location.origin}/api/identity/Report/dashboard`
 const N3_LOGIN_URL = `${window.location.origin}/login`
 const HANDOFF_REDEEM_URL = `${window.location.origin.replace(/:\d+$/, ':5000')}/api/identity/Auth/handoff/redeem`
 
@@ -396,6 +397,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
   const transactions = ref([])
   const fines = ref([])
   const dashboardStats = ref(null)
+  const identityStats = ref(null)
   const revenueSummary = ref(null)
   const priceSettings = ref(null)
   const loading = ref(false)
@@ -506,6 +508,15 @@ export const useLibrarianStore = defineStore('librarian', () => {
       return dashboardStats.value
     }
   }
+  async function loadIdentityStats() {
+    try {
+      const r = await apiFetch(IDENTITY_REPORT_API)
+      if (r.ok) identityStats.value = await r.json()
+      return identityStats.value
+    } catch {
+      return identityStats.value
+    }
+  }
   async function loadTransactions() {
     loading.value = true
     try {
@@ -562,7 +573,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
     return r
   }
   async function payFine(id) { const r = await apiFetch(`${CIRC_API}/fines/${id}/pay`, { method: 'POST' }); if (r.ok) await loadFines(); return r }
-  async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary(), loadPriceSettings(), loadDashboardStats()]) }
+  async function loadAll() { await Promise.all([loadBooks(), loadTransactions(), loadFines(), loadRevenueSummary(), loadPriceSettings(), loadDashboardStats(), loadIdentityStats()]) }
 
   function bookTitleOf(record = {}) {
     const bookId = normalizeBookId(bookIdOf(record))
@@ -591,12 +602,12 @@ export const useLibrarianStore = defineStore('librarian', () => {
   }
 
   return {
-    books, transactions, fines, dashboardStats, revenueSummary, priceSettings, loading,
+    books, transactions, fines, dashboardStats, identityStats, revenueSummary, priceSettings, loading,
     embedMode: isEmbedMode(),
     hasAuthToken,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
     statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,
-    loadBooks, loadTransactions, loadFines, loadDashboardStats, loadRevenueSummary, loadPriceSettings, savePriceSettings, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
+    loadBooks, loadTransactions, loadFines, loadDashboardStats, loadIdentityStats, loadRevenueSummary, loadPriceSettings, savePriceSettings, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
   }
 })
