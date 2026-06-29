@@ -26,9 +26,10 @@
           <template v-if="items.length">
             <div class="cart-item" v-for="item in items" :key="item.id">
               <div class="item-cover-wrap">
-                <v-avatar rounded="lg" size="100" class="book-avatar" :image="item.imageUrl || undefined">
-                  <v-icon v-if="!item.imageUrl" size="30" color="white">mdi-book-open-variant</v-icon>
-                </v-avatar>
+                <div class="book-cover" :style="{ backgroundColor: coverColor(item) }">
+                  <v-img v-if="coverImage(item)" :src="coverImage(item)" cover height="100%" width="100%" />
+                  <v-icon v-else size="30" color="white">mdi-book-open-variant</v-icon>
+                </div>
               </div>
 
               <div class="item-body">
@@ -128,7 +129,7 @@
 import { computed, onMounted, watch, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { formatMoney, getDisplayName, formatDurationText } from '@/utils/helpers'
-import { borrowBook, getReaderCard } from '@/utils/api'
+import { borrowBook, getReaderCard, getBookImageUrl } from '@/utils/api'
 
 const store = useAppStore()
 const submitting = ref(false)
@@ -150,6 +151,18 @@ const remainingBorrowAllowance = computed(() =>
 const remainingInMonth = computed(() =>
   Math.max(0, remainingBorrowAllowance.value - totalQuantity.value)
 )
+
+function matchingBook(item = {}) {
+  return store.books.find(book => String(book.id ?? book.Id ?? book.bookId ?? book.BookId ?? '') === String(item.id))
+}
+
+function coverImage(item = {}) {
+  return getBookImageUrl(item) || getBookImageUrl(matchingBook(item) || {})
+}
+
+function coverColor(item = {}) {
+  return coverImage(item) ? '#f8fafc' : '#047857'
+}
 
 function ensureItem(item) {
   if (!item) return
@@ -197,11 +210,15 @@ function normalizeCart() {
     const beforeDays = item.borrowDays
     const beforeQty = item.quantity
     const beforeDueAt = item.borrowDueAt
+    const beforeImage = item.imageUrl
     ensureItem(item)
+    const imageUrl = coverImage(item)
+    if (imageUrl && imageUrl !== item.imageUrl) item.imageUrl = imageUrl
     item.borrowDays = daysFromDueAt(item.borrowDueAt)
     item.borrowDurationText = formatDurationText(new Date(), item.borrowDueAt)
     if (beforeDays !== item.borrowDays || beforeQty !== item.quantity) changed = true
     if (beforeDueAt !== item.borrowDueAt) changed = true
+    if (beforeImage !== item.imageUrl) changed = true
   })
   if (changed) store.cartItems = [...store.cartItems]
 }
@@ -325,8 +342,15 @@ onMounted(() => store.loadAll())
   align-items: flex-start;
   justify-content: center;
 }
-.book-avatar {
+.book-cover {
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
   background: linear-gradient(135deg, #065f46, #047857);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
 }
 .item-body {
   min-width: 0;
