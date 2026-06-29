@@ -26,6 +26,7 @@ public sealed class CirculationController : ControllerBase
     private const decimal DefaultLostFine = 100000m;
     private const string BorrowPolicyEventType = "BorrowPolicyUpdated";
     private const string PricePolicyEventType = "PricePolicyUpdated";
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
     private readonly CirculationDbContext _dbContext;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
@@ -179,11 +180,11 @@ public sealed class CirculationController : ControllerBase
             CardNumber = transaction.CardNumber,
             ReaderName = transaction.ReaderName,
             ReaderUsername = transaction.ReaderUsername,
-            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
-            DueAt = AsUtcDateTime(transaction.DueAt),
-            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
-            UpdatedAt = AsUtcDateTime(transaction.BorrowedAt),
-            RequestDate = AsUtcDateTime(transaction.BorrowedAt)
+            BorrowedAt = ToVietnamDateTime(transaction.BorrowedAt),
+            DueAt = ToVietnamDateTime(transaction.DueAt),
+            CreatedAt = ToVietnamDateTime(transaction.BorrowedAt),
+            UpdatedAt = ToVietnamDateTime(transaction.BorrowedAt),
+            RequestDate = ToVietnamDateTime(transaction.BorrowedAt)
         });
     }
 
@@ -843,12 +844,12 @@ public sealed class CirculationController : ControllerBase
                 CreatedAt = transaction.BorrowedAt,
                 UpdatedAt = returnedAt,
                 RequestDate = transaction.BorrowedAt,
-                createdAt = ToIsoUtc(transaction.BorrowedAt),
-                updatedAt = ToIsoUtc(returnedAt),
-                requestDate = ToIsoUtc(transaction.BorrowedAt),
-                borrowDate = ToIsoUtc(transaction.BorrowedAt),
-                returnDate = ToIsoUtc(returnedAt),
-                ngayMuon = ToIsoUtc(transaction.BorrowedAt),
+                createdAt = ToIsoVietnam(transaction.BorrowedAt),
+                updatedAt = ToIsoVietnam(returnedAt),
+                requestDate = ToIsoVietnam(transaction.BorrowedAt),
+                borrowDate = ToIsoVietnam(transaction.BorrowedAt),
+                returnDate = ToIsoVietnam(returnedAt),
+                ngayMuon = ToIsoVietnam(transaction.BorrowedAt),
                 FineAmount = fineAmount,
                 Condition = condition,
                 ConditionNote = conditionNote,
@@ -865,11 +866,11 @@ public sealed class CirculationController : ControllerBase
             Isbn = transaction.Isbn,
             UserId = transaction.UserId,
             CardNumber = transaction.CardNumber,
-            BorrowedAt = AsUtcDateTime(transaction.BorrowedAt),
-            ReturnedAt = AsUtcDateTime(returnedAt),
-            CreatedAt = AsUtcDateTime(transaction.BorrowedAt),
-            UpdatedAt = AsUtcDateTime(returnedAt),
-            RequestDate = AsUtcDateTime(transaction.BorrowedAt),
+            BorrowedAt = ToVietnamDateTime(transaction.BorrowedAt),
+            ReturnedAt = ToVietnamDateTime(returnedAt),
+            CreatedAt = ToVietnamDateTime(transaction.BorrowedAt),
+            UpdatedAt = ToVietnamDateTime(returnedAt),
+            RequestDate = ToVietnamDateTime(transaction.BorrowedAt),
             FineAmount = fineAmount,
             Condition = condition,
             ReturnedToCatalog = shouldReturnCopyToCatalog
@@ -989,9 +990,11 @@ public sealed class CirculationController : ControllerBase
     public async Task<ActionResult> GetDashboardStatsAsync(CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1).AddMonths(-5);
+        var vietnamNow = ToVietnamDateTime(now);
+        var vietnamMonthStart = new DateTime(vietnamNow.Year, vietnamNow.Month, 1).AddMonths(-5);
+        var monthStart = FromVietnamDateTime(vietnamMonthStart);
         var monthKeys = Enumerable.Range(0, 6)
-            .Select(offset => monthStart.AddMonths(offset))
+            .Select(offset => vietnamMonthStart.AddMonths(offset))
             .ToList();
 
         var totalBorrows = await _dbContext.BorrowTransactions
@@ -1047,19 +1050,29 @@ public sealed class CirculationController : ControllerBase
             };
         }).ToList();
 
-        var borrowTrendRaw = await _dbContext.BorrowTransactions
+        var borrowTrendSource = await _dbContext.BorrowTransactions
             .AsNoTracking()
             .Where(item => item.BorrowedAt >= monthStart)
-            .GroupBy(item => new { item.BorrowedAt.Year, item.BorrowedAt.Month })
-            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .Select(item => item.BorrowedAt)
             .ToListAsync(cancellationToken);
 
-        var returnTrendRaw = await _dbContext.BorrowTransactions
+        var returnTrendSource = await _dbContext.BorrowTransactions
             .AsNoTracking()
             .Where(item => item.ReturnedAt != null && item.ReturnedAt >= monthStart)
-            .GroupBy(item => new { item.ReturnedAt!.Value.Year, item.ReturnedAt.Value.Month })
-            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .Select(item => item.ReturnedAt!.Value)
             .ToListAsync(cancellationToken);
+
+        var borrowTrendRaw = borrowTrendSource
+            .Select(ToVietnamDateTime)
+            .GroupBy(item => new { item.Year, item.Month })
+            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .ToList();
+
+        var returnTrendRaw = returnTrendSource
+            .Select(ToVietnamDateTime)
+            .GroupBy(item => new { item.Year, item.Month })
+            .Select(group => new { group.Key.Year, group.Key.Month, Count = group.Count() })
+            .ToList();
 
         var borrowTrendLookup = borrowTrendRaw.ToDictionary(item => (item.Year, item.Month), item => item.Count);
         var returnTrendLookup = returnTrendRaw.ToDictionary(item => (item.Year, item.Month), item => item.Count);
@@ -1266,11 +1279,12 @@ public sealed class CirculationController : ControllerBase
     public async Task<ActionResult> GetStatisticsAsync(CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var today = now.Date;
+        var todayStart = FromVietnamDateTime(ToVietnamDateTime(now).Date);
+        var tomorrowStart = todayStart.AddDays(1);
 
         var totalCount = await _dbContext.BorrowTransactions.CountAsync(cancellationToken);
         var todayBorrowCount = await _dbContext.BorrowTransactions
-            .CountAsync(b => b.BorrowedAt >= today, cancellationToken);
+            .CountAsync(b => b.BorrowedAt >= todayStart && b.BorrowedAt < tomorrowStart, cancellationToken);
         var totalBorrowed = await _dbContext.BorrowTransactions
             .CountAsync(b => b.ReturnedAt == null && b.Status != "Pending", cancellationToken);
         var totalOverdue = await _dbContext.BorrowTransactions
@@ -1743,16 +1757,16 @@ public sealed class CirculationController : ControllerBase
                 transaction.CardNumber,
                 transaction.ReaderName,
                 transaction.ReaderUsername,
-                BorrowedAt = approvedAt,
-                DueAt = AsUtcDateTime(transaction.DueAt),
-                CreatedAt = approvedAt,
-                UpdatedAt = approvedAt,
-                RequestDate = approvedAt,
-                createdAt = ToIsoUtc(approvedAt),
-                updatedAt = ToIsoUtc(approvedAt),
-                requestDate = ToIsoUtc(approvedAt),
-                borrowDate = ToIsoUtc(approvedAt),
-                ngayMuon = ToIsoUtc(approvedAt),
+                BorrowedAt = ToVietnamDateTime(approvedAt),
+                DueAt = ToVietnamDateTime(transaction.DueAt),
+                CreatedAt = ToVietnamDateTime(approvedAt),
+                UpdatedAt = ToVietnamDateTime(approvedAt),
+                RequestDate = ToVietnamDateTime(approvedAt),
+                createdAt = ToIsoVietnam(approvedAt),
+                updatedAt = ToIsoVietnam(approvedAt),
+                requestDate = ToIsoVietnam(approvedAt),
+                borrowDate = ToIsoVietnam(approvedAt),
+                ngayMuon = ToIsoVietnam(approvedAt),
                 Status = transaction.Status
             },
             new DateTimeOffset(approvedAt, TimeSpan.Zero),
@@ -2153,6 +2167,22 @@ public sealed class CirculationController : ControllerBase
     private static DateTime AsUtcDateTime(DateTime date)
     {
         return DateTime.SpecifyKind(NormalizeUtc(date), DateTimeKind.Utc);
+    }
+
+    private static DateTime ToVietnamDateTime(DateTime date)
+    {
+        return DateTime.SpecifyKind(NormalizeUtc(date).Add(VietnamOffset), DateTimeKind.Unspecified);
+    }
+
+    private static string ToIsoVietnam(DateTime date)
+    {
+        return ToVietnamDateTime(date).ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime FromVietnamDateTime(DateTime date)
+    {
+        var unspecified = DateTime.SpecifyKind(date, DateTimeKind.Unspecified);
+        return DateTime.SpecifyKind(unspecified.Subtract(VietnamOffset), DateTimeKind.Utc);
     }
 
     private async Task<int> GetActiveBorrowsCountAsync(string bookId, CancellationToken cancellationToken)
@@ -3428,7 +3458,9 @@ public sealed class CirculationController : ControllerBase
         windowEnd = default;
 
         var normalizedPeriod = period?.Trim().ToLowerInvariant();
-        var referenceDate = NormalizeUtc(date ?? DateTime.UtcNow);
+        var referenceDate = date is null
+            ? ToVietnamDateTime(DateTime.UtcNow)
+            : DateTime.SpecifyKind(date.Value, DateTimeKind.Unspecified);
 
         if (normalizedPeriod is null or "" or "all")
         {
@@ -3442,8 +3474,8 @@ public sealed class CirculationController : ControllerBase
                 return false;
             }
 
-            windowStart = NormalizeUtc(from.Value).Date;
-            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            windowStart = FromVietnamDateTime(from.Value.Date);
+            windowEnd = FromVietnamDateTime(to.Value.Date.AddDays(1));
             if (windowEnd <= windowStart)
             {
                 windowEnd = windowStart.AddDays(1);
@@ -3454,29 +3486,31 @@ public sealed class CirculationController : ControllerBase
 
         if (normalizedPeriod == "day")
         {
-            windowStart = referenceDate.Date;
-            windowEnd = windowStart.AddDays(1);
+            windowStart = FromVietnamDateTime(referenceDate.Date);
+            windowEnd = FromVietnamDateTime(referenceDate.Date.AddDays(1));
             return true;
         }
 
         if (normalizedPeriod == "month")
         {
-            windowStart = new DateTime(referenceDate.Year, referenceDate.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-            windowEnd = windowStart.AddMonths(1);
+            var vietnamMonthStart = new DateTime(referenceDate.Year, referenceDate.Month, 1);
+            windowStart = FromVietnamDateTime(vietnamMonthStart);
+            windowEnd = FromVietnamDateTime(vietnamMonthStart.AddMonths(1));
             return true;
         }
 
         if (normalizedPeriod == "year")
         {
-            windowStart = new DateTime(referenceDate.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            windowEnd = windowStart.AddYears(1);
+            var vietnamYearStart = new DateTime(referenceDate.Year, 1, 1);
+            windowStart = FromVietnamDateTime(vietnamYearStart);
+            windowEnd = FromVietnamDateTime(vietnamYearStart.AddYears(1));
             return true;
         }
 
         if (normalizedPeriod == "range" && from is not null && to is not null)
         {
-            windowStart = NormalizeUtc(from.Value).Date;
-            windowEnd = NormalizeUtc(to.Value).Date.AddDays(1);
+            windowStart = FromVietnamDateTime(from.Value.Date);
+            windowEnd = FromVietnamDateTime(to.Value.Date.AddDays(1));
             if (windowEnd <= windowStart)
             {
                 windowEnd = windowStart.AddDays(1);
@@ -3552,6 +3586,18 @@ public sealed class CirculationController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
+        var recentRevenueResult = recentRevenue.Select(item => new
+        {
+            item.Id,
+            item.SourceType,
+            item.ReferenceId,
+            item.UserId,
+            item.CardNumber,
+            item.Amount,
+            item.Description,
+            CreatedAt = ToIsoVietnam(item.CreatedAt)
+        }).ToList();
+
         return new
         {
             totalRevenue = totalBorrowRevenue + totalFineRevenue,
@@ -3561,7 +3607,7 @@ public sealed class CirculationController : ControllerBase
             unpaidFineAmount,
             borrowRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "BorrowApproval", cancellationToken),
             fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
-            recentRevenue
+            recentRevenue = recentRevenueResult
         };
     }
 
@@ -3696,15 +3742,15 @@ public sealed class CirculationController : ControllerBase
                 r.CardNumber,
                 ReaderName = string.IsNullOrWhiteSpace(readerName) ? r.CardNumber ?? r.UserId ?? "" : readerName,
                 ReaderUsername = readerUsername,
-                BorrowedAt = ToIsoUtc(r.BorrowedAt),
-                DueAt = ToIsoUtc(r.DueAt),
-                ReturnedAt = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
-                createdAt = ToIsoUtc(r.BorrowedAt),
-                updatedAt = ToIsoUtc(r.ReturnedAt ?? r.BorrowedAt),
-                requestDate = ToIsoUtc(r.BorrowedAt),
-                borrowDate = ToIsoUtc(r.BorrowedAt),
-                ngayMuon = ToIsoUtc(r.BorrowedAt),
-                returnDate = r.ReturnedAt is null ? null : ToIsoUtc(r.ReturnedAt.Value),
+                BorrowedAt = ToIsoVietnam(r.BorrowedAt),
+                DueAt = ToIsoVietnam(r.DueAt),
+                ReturnedAt = r.ReturnedAt is null ? null : ToIsoVietnam(r.ReturnedAt.Value),
+                createdAt = ToIsoVietnam(r.BorrowedAt),
+                updatedAt = ToIsoVietnam(r.ReturnedAt ?? r.BorrowedAt),
+                requestDate = ToIsoVietnam(r.BorrowedAt),
+                borrowDate = ToIsoVietnam(r.BorrowedAt),
+                ngayMuon = ToIsoVietnam(r.BorrowedAt),
+                returnDate = r.ReturnedAt is null ? null : ToIsoVietnam(r.ReturnedAt.Value),
                 FineAmount = r.FineAmount,
                 Status = r.Status,
                 TenSach = book?.TenSach ?? "",
@@ -3858,10 +3904,10 @@ public sealed class CirculationController : ControllerBase
                 TacGia = book?.TacGia ?? "",
                 f.Amount,
                 f.Reason,
-                f.CreatedAt,
+                CreatedAt = ToIsoVietnam(f.CreatedAt),
                 f.PaymentStatus,
-                f.PaymentRequestedAt,
-                f.PaidAt,
+                PaymentRequestedAt = f.PaymentRequestedAt is null ? null : ToIsoVietnam(f.PaymentRequestedAt.Value),
+                PaidAt = f.PaidAt is null ? null : ToIsoVietnam(f.PaidAt.Value),
                 IsPaid = f.PaidAt != null || f.PaymentStatus == "Paid",
                 IsPaymentPending = f.PaymentStatus == "PendingApproval"
             };
