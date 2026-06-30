@@ -3630,6 +3630,13 @@ public sealed class CirculationController : ControllerBase
                     },
                     cancellationToken);
 
+        var revenueCardsNeedingIdentity = recentRevenue
+            .Select(item => GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, item.CardNumber, "CardNumber"))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var revenueIdentityUsersByCard = await GetUsersFromIdentityByCardAsync(revenueCardsNeedingIdentity!, cancellationToken);
+
         var recentRevenueResult = recentRevenue.Select(item => new
         {
             item.Id,
@@ -3637,8 +3644,8 @@ public sealed class CirculationController : ControllerBase
             item.ReferenceId,
             UserId = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, item.UserId, "UserId"),
             CardNumber = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, item.CardNumber, "CardNumber"),
-            ReaderName = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, "", "ReaderName"),
-            ReaderUsername = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, "", "ReaderUsername"),
+            ReaderName = GetRevenueReaderName(item.ReferenceId, fineReaderLookup, item.CardNumber, revenueIdentityUsersByCard),
+            ReaderUsername = GetRevenueReaderUsername(item.ReferenceId, fineReaderLookup, item.CardNumber, revenueIdentityUsersByCard),
             item.Amount,
             item.Description,
             CreatedAt = ToIsoVietnam(item.CreatedAt)
@@ -3668,6 +3675,38 @@ public sealed class CirculationController : ControllerBase
 
         var value = info.GetType().GetProperty(propertyName)?.GetValue(info)?.ToString();
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static string GetRevenueReaderName(
+        string referenceId,
+        IReadOnlyDictionary<Guid, object> fineReaderLookup,
+        string? cardNumber,
+        IReadOnlyDictionary<string, ReaderIdentityInfo> identityUsersByCard)
+    {
+        var readerName = GetRevenueReaderValue(referenceId, fineReaderLookup, "", "ReaderName") ?? "";
+        var resolvedCard = GetRevenueReaderValue(referenceId, fineReaderLookup, cardNumber, "CardNumber") ?? "";
+        if (!string.IsNullOrWhiteSpace(readerName))
+            return readerName;
+
+        return !string.IsNullOrWhiteSpace(resolvedCard) && identityUsersByCard.TryGetValue(resolvedCard, out var identity)
+            ? string.IsNullOrWhiteSpace(identity.FullName) ? identity.Username : identity.FullName
+            : "";
+    }
+
+    private static string GetRevenueReaderUsername(
+        string referenceId,
+        IReadOnlyDictionary<Guid, object> fineReaderLookup,
+        string? cardNumber,
+        IReadOnlyDictionary<string, ReaderIdentityInfo> identityUsersByCard)
+    {
+        var readerUsername = GetRevenueReaderValue(referenceId, fineReaderLookup, "", "ReaderUsername") ?? "";
+        var resolvedCard = GetRevenueReaderValue(referenceId, fineReaderLookup, cardNumber, "CardNumber") ?? "";
+        if (!string.IsNullOrWhiteSpace(readerUsername))
+            return readerUsername;
+
+        return !string.IsNullOrWhiteSpace(resolvedCard) && identityUsersByCard.TryGetValue(resolvedCard, out var identity)
+            ? identity.Username
+            : "";
     }
 
     private async Task<IReadOnlyList<object>> BuildTransactionsListAsync(
