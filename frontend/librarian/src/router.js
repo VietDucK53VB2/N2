@@ -18,7 +18,8 @@ export default createRouter({
         { path: 'embed/loans', name: 'embed-loans', component: () => import('./views/Loans.vue') },
         { path: 'embed/fines', name: 'embed-fines', component: () => import('./views/Fines.vue') },
         { path: 'embed/prices', name: 'embed-prices', component: () => import('./views/FinancePrices.vue') },
-        { path: 'embed/revenue', name: 'embed-revenue', component: () => import('./views/FinanceRevenue.vue') }
+        { path: 'embed/revenue', name: 'embed-revenue', component: () => import('./views/FinanceRevenue.vue') },
+        { path: 'embed/reviews', name: 'embed-reviews', component: () => import('./views/Reviews.vue') }
       ]
     }
   ]

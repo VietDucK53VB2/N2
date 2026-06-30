@@ -341,8 +341,16 @@ function isEmbedPricesRoute() {
   return hash.includes('/finance/prices')
 }
 
+function isEmbedReviewsRoute() {
+  const pathname = window.location.pathname || ''
+  if (pathname.startsWith('/ui/librarian/embed/reviews')) return true
+
+  const hash = window.location.hash || ''
+  return hash.includes('/reviews')
+}
+
 function isPublicEmbedRoute() {
-  return isEmbedRevenueRoute() || isEmbedLoansRoute() || isEmbedFinesRoute() || isEmbedPricesRoute()
+  return isEmbedRevenueRoute() || isEmbedLoansRoute() || isEmbedFinesRoute() || isEmbedPricesRoute() || isEmbedReviewsRoute()
 }
 
 function hasAuthToken() {

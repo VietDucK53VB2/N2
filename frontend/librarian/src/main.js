@@ -23,7 +23,8 @@ function migrateLegacyHashRoute() {
     '/finance/revenue': '/embed/revenue',
     '/loans': '/embed/loans',
     '/fines': '/embed/fines',
-    '/finance/prices': '/embed/prices'
+    '/finance/prices': '/embed/prices',
+    '/reviews': '/embed/reviews'
   }
 
   const target = routeMap[normalizedRoute] || normalizedRoute
