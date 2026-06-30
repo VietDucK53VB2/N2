@@ -130,8 +130,8 @@
               </template>
               <template v-else-if="column.key === 'Description'">
                 <div class="desc-cell">
-                  <div class="reader-line" v-if="displayCard(record) !== '—' || displayReader(record) !== '—'">
-                    {{ displayReader(record) }} · {{ displayCard(record) }}
+                  <div class="reader-line" v-if="displayReaderLine(record) !== '—'">
+                    {{ displayReaderLine(record) }}
                   </div>
                   <div>{{ record.Description }}</div>
                 </div>
@@ -279,11 +279,19 @@ function fmtDateTime(value) {
 }
 
 function displayReader(record = {}) {
-  return record.ReaderName || record.readerName || record.FullName || record.fullName || record.ReaderUsername || record.readerUsername || displayCard(record)
+  return record.ReaderName || record.readerName || record.FullName || record.fullName || record.ReaderUsername || record.readerUsername || ''
 }
 
 function displayCard(record = {}) {
   return record.CardNumber || record.cardNumber || '—'
+}
+
+function displayReaderLine(record = {}) {
+  const reader = displayReader(record)
+  const card = displayCard(record)
+
+  if (reader && card !== '—' && reader !== card) return `${reader} · ${card}`
+  return reader || card
 }
 
 function buildRevenueParams() {
