@@ -165,12 +165,14 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useLibrarianStore } from '@/stores/librarian'
 import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 
 const store = useLibrarianStore()
+const route = useRoute()
 const embedMode = store.embedMode
 const readOnlyEmbed = computed(() => embedMode && !store.hasAuthToken())
 const filter = ref('all')
@@ -203,13 +205,19 @@ const columns = computed(() => {
 })
 
 const filteredTx = computed(() => {
-  if (filter.value === 'all') return store.transactions
-  if (filter.value === 'Pending') return store.pendingTx
-  if (filter.value === 'Borrowed') return store.borrowedTx
-  if (filter.value === 'ReturnPending') return store.returnPendingTx
-  if (filter.value === 'Overdue') return store.overdueTx
-  if (filter.value === 'Returned') return store.returnedTx
-  return store.transactions.filter(t => store.statusOf(t) === filter.value)
+  const source = (() => {
+    if (filter.value === 'all') return store.transactions
+    if (filter.value === 'Pending') return store.pendingTx
+    if (filter.value === 'Borrowed') return store.borrowedTx
+    if (filter.value === 'ReturnPending') return store.returnPendingTx
+    if (filter.value === 'Overdue') return store.overdueTx
+    if (filter.value === 'Returned') return store.returnedTx
+    return store.transactions.filter(t => store.statusOf(t) === filter.value)
+  })()
+
+  const q = String(route.query.q || '').trim()
+  if (!q) return source
+  return source.filter(record => store.matchesReaderQuery(record, q, [bookTitleOf(record), store.bookIdOf(record)]))
 })
 
 async function doApprove(r) {

@@ -151,11 +151,13 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import { message } from 'ant-design-vue'
 import { useLibrarianStore } from '@/stores/librarian'
 
 const libStore = useLibrarianStore()
+const route = useRoute()
 const embedMode = libStore.embedMode
 const readOnlyEmbed = computed(() => embedMode && !libStore.hasAuthToken())
 const filter = ref('all')
@@ -183,10 +185,20 @@ const columns = computed(() => {
 })
 
 const filteredFines = computed(() => {
-  if (filter.value === 'all') return libStore.fines
-  if (filter.value === 'Paid') return libStore.fines.filter(item => isPaid(item))
-  if (filter.value === 'Pending') return libStore.fines.filter(item => isPending(item))
-  return libStore.fines.filter(item => !isPaid(item) && !isPending(item))
+  const source = (() => {
+    if (filter.value === 'all') return libStore.fines
+    if (filter.value === 'Paid') return libStore.fines.filter(item => isPaid(item))
+    if (filter.value === 'Pending') return libStore.fines.filter(item => isPending(item))
+    return libStore.fines.filter(item => !isPaid(item) && !isPending(item))
+  })()
+
+  const q = String(route.query.q || '').trim()
+  if (!q) return source
+  return source.filter(item => libStore.matchesReaderQuery(item, q, [
+    displayBook(item),
+    item.BookId || item.bookId || '',
+    translateFineReason(item.Reason || item.reason || '')
+  ]))
 })
 
 const pendingFines = computed(() => libStore.fines.filter(item => isPending(item)))

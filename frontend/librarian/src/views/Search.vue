@@ -67,11 +67,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import dayjs from 'dayjs'
 import { useLibrarianStore } from '@/stores/librarian'
 
 const store = useLibrarianStore()
+const route = useRoute()
 const cardNumber = ref('')
 const result = ref(null)
 
@@ -94,7 +96,16 @@ const readers = computed(() => {
     if (store.isOverdue(t)) map[c].overdue++
     if (store.isReturned(t)) map[c].returned++
   })
-  return Object.values(map).sort((a, b) => b.overdue - a.overdue || b.active - a.active)
+  const q = String(cardNumber.value || route.query.q || '').trim()
+  const list = Object.values(map)
+  const filtered = q
+    ? list.filter(item => store.matchesReaderQuery({
+        CardNumber: item.cardNumber,
+        ReaderName: item.readerName
+      }, q))
+    : list
+
+  return filtered.sort((a, b) => b.overdue - a.overdue || b.active - a.active)
 })
 
 function search() {
@@ -102,18 +113,34 @@ function search() {
 }
 
 function searchByCard(c) {
-  if (!String(c || '').trim()) return
-  cardNumber.value = c
-  const txs = store.transactions.filter(t => store.cardNumberOf(t) === c)
+  const q = String(c || '').trim()
+  if (!q) return
+  cardNumber.value = q
+  const exact = readers.value.find(item => item.cardNumber === q)
+  const picked = exact || readers.value[0]
+  if (!picked) {
+    result.value = null
+    return
+  }
+  const txs = store.transactions.filter(t => store.cardNumberOf(t) === picked.cardNumber)
   result.value = {
-    cardNo: c,
-    readerName: txs[0]?.ReaderName || txs[0]?.readerName || txs[0]?.FullName || txs[0]?.fullName || txs[0]?.ReaderUsername || txs[0]?.readerUsername || c,
+    cardNo: picked.cardNumber,
+    readerName: picked.readerName || txs[0]?.ReaderName || txs[0]?.readerName || txs[0]?.FullName || txs[0]?.fullName || txs[0]?.ReaderUsername || txs[0]?.readerUsername || picked.cardNumber,
     transactions: txs,
     active: txs.filter(store.isActiveLoan).length,
     overdue: txs.filter(store.isOverdue).length,
     returned: txs.filter(store.isReturned).length
   }
 }
+
+watch(
+  () => route.query.q,
+  q => {
+    cardNumber.value = String(q || '')
+    result.value = null
+  },
+  { immediate: true }
+)
 
 function fmtDateTime(d) {
   return d ? dayjs(d).format('DD/MM/YYYY HH:mm:ss') : '—'

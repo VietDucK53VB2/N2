@@ -222,6 +222,49 @@ function cardNumberOf(transaction = {}) {
   return transaction.CardNumber || transaction.cardNumber || '—'
 }
 
+function readerNameOf(record = {}) {
+  return (
+    record.ReaderName ||
+    record.readerName ||
+    record.FullName ||
+    record.fullName ||
+    record.ReaderUsername ||
+    record.readerUsername ||
+    record.Username ||
+    record.username ||
+    cardNumberOf(record)
+  )
+}
+
+function normalizeSearchText(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
+
+function matchesReaderQuery(record = {}, query = '', extraValues = []) {
+  const needle = normalizeSearchText(query)
+  if (!needle) return true
+
+  const haystack = [
+    cardNumberOf(record),
+    readerNameOf(record),
+    record.FullName,
+    record.fullName,
+    record.ReaderName,
+    record.readerName,
+    record.ReaderUsername,
+    record.readerUsername,
+    record.Username,
+    record.username,
+    ...extraValues
+  ].map(normalizeSearchText).join(' ')
+
+  return haystack.includes(needle)
+}
+
 function bookIdOf(transaction = {}) {
   return transaction.BookId || transaction.bookId || ''
 }
@@ -608,7 +651,7 @@ export const useLibrarianStore = defineStore('librarian', () => {
     hasAuthToken,
     pendingTx, borrowedTx, activeTx, overdueTx, returnPendingTx, returnedTx,
     unpaidFines, paidFines, totalUnpaid, totalRevenue, totalBorrowRevenue, totalFineRevenue, pendingFineAmount, unpaidFineAmount, borrowRevenueCount, fineRevenueCount, recentRevenue,
-    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, bookIdOf, bookTitleOf,
+    statusOf, isPending, isBorrowed, isOverdue, isReturned, isReturnPending, isActiveLoan, cardNumberOf, readerNameOf, matchesReaderQuery, bookIdOf, bookTitleOf,
     loadBooks, loadTransactions, loadFines, loadDashboardStats, loadIdentityStats, loadRevenueSummary, loadPriceSettings, savePriceSettings, loadAll, approve, reject, requestReturn, approveReturn, renew, rejectRenew, rejectReturn, payFine
   }
 })

@@ -75,9 +75,13 @@
         <a-space class="header-right" :size="12">
           <a-input-search
             placeholder="Tìm kiếm Độc giả, Thẻ..."
+            v-model:value="globalSearch"
             style="width: 260px"
             size="middle"
             class="header-search"
+            allow-clear
+            @search="applyGlobalSearch"
+            @change="onGlobalSearchChange"
           />
           <a-dropdown trigger="click" :menu="{ items: settingsMenuItems, onClick: onToolbarMenuClick }">
             <a-button type="text" shape="circle" size="large" class="topbar-action">
@@ -186,6 +190,7 @@ const collapsed = ref(false)
 const selectedKeys = ref(['overview'])
 const sessionUserInfo = ref(readSessionUserInfo())
 const accountModalVisible = ref(false)
+const globalSearch = ref('')
 
 function readStoredUserInfo() {
   try {
@@ -379,8 +384,29 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => route.query.q,
+  q => { globalSearch.value = String(q || '') },
+  { immediate: true }
+)
+
 function onMenuClick({ key }) {
   router.push({ name: key })
+}
+
+function applyGlobalSearch(value = globalSearch.value) {
+  const q = String(value || '').trim()
+  router.replace({
+    name: route.name || 'overview',
+    query: {
+      ...route.query,
+      ...(q ? { q } : { q: undefined })
+    }
+  })
+}
+
+function onGlobalSearchChange(event) {
+  if (!event?.target?.value) applyGlobalSearch('')
 }
 
 const settingsMenuItems = computed(() => ([

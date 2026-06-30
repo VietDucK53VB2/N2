@@ -138,12 +138,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useLibrarianStore } from '@/stores/librarian'
 
 const store = useLibrarianStore()
+const route = useRoute()
 const keyword = ref('')
 const actionId = ref(null)
 const conditionDialog = ref(false)
@@ -180,15 +182,19 @@ const filteredLoans = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return returnableLoans.value
   return returnableLoans.value.filter(loan => {
-    const haystack = [
-      store.cardNumberOf(loan),
+    return store.matchesReaderQuery(loan, q, [
       store.bookIdOf(loan),
       bookTitle(loan),
       store.statusOf(loan)
-    ].join(' ').toLowerCase()
-    return haystack.includes(q)
+    ])
   })
 })
+
+watch(
+  () => route.query.q,
+  q => { keyword.value = String(q || '') },
+  { immediate: true }
+)
 
 function openConditionDialog(record) {
   selectedLoan.value = record

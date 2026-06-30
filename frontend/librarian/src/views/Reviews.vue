@@ -104,12 +104,14 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
 const groups = ref([])
 const deletingKey = ref('')
+const route = useRoute()
 
 const columns = [
   { title: 'Mã sách', dataIndex: 'bookId', key: 'book', width: 220 },
@@ -169,7 +171,24 @@ const reviewRows = computed(() => {
     })
   })
 
-  return rows.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+  const q = String(route.query.q || '').trim()
+  const filtered = q
+    ? rows.filter(row => {
+        const haystack = [
+          row.cardNumber,
+          row.username,
+          row.fullName,
+          row.reviewerName,
+          row.reviewerDetail,
+          row.title,
+          row.bookId
+        ].join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        const needle = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        return haystack.includes(needle)
+      })
+    : rows
+
+  return filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
 })
 
 async function load() {
