@@ -129,7 +129,12 @@
                 <div class="ref-cell">{{ record.ReferenceId }}</div>
               </template>
               <template v-else-if="column.key === 'Description'">
-                <div class="desc-cell">{{ record.Description }}</div>
+                <div class="desc-cell">
+                  <div class="reader-line" v-if="displayCard(record) !== '—' || displayReader(record) !== '—'">
+                    {{ displayReader(record) }} · {{ displayCard(record) }}
+                  </div>
+                  <div>{{ record.Description }}</div>
+                </div>
               </template>
               <template v-else-if="column.key === 'Amount'">
                 <span class="money">{{ money(record.Amount) }}</span>
@@ -271,6 +276,14 @@ function money(value) {
 
 function fmtDateTime(value) {
   return value ? dayjs(value).format('DD/MM/YYYY HH:mm:ss') : '—'
+}
+
+function displayReader(record = {}) {
+  return record.ReaderName || record.readerName || record.FullName || record.fullName || record.ReaderUsername || record.readerUsername || displayCard(record)
+}
+
+function displayCard(record = {}) {
+  return record.CardNumber || record.cardNumber || '—'
 }
 
 function buildRevenueParams() {
@@ -533,6 +546,12 @@ watch(
   font-size: 13px;
   color: #33514b;
   word-break: break-word;
+}
+
+.reader-line {
+  margin-bottom: 4px;
+  color: #0f3d35;
+  font-weight: 700;
 }
 
 .summary-stack,

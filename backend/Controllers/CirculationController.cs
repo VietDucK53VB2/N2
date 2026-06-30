@@ -3595,13 +3595,50 @@ public sealed class CirculationController : ControllerBase
             })
             .ToListAsync(cancellationToken);
 
+        var fineRevenueIds = recentRevenue
+            .Where(item => string.Equals(item.SourceType, "FinePayment", StringComparison.OrdinalIgnoreCase))
+            .Select(item => Guid.TryParse(item.ReferenceId, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        var fineReaderLookup = fineRevenueIds.Count == 0
+            ? new Dictionary<Guid, object>()
+            : await _dbContext.FineCharges
+                .AsNoTracking()
+                .Where(fine => fineRevenueIds.Contains(fine.Id))
+                .Join(
+                    _dbContext.BorrowTransactions.AsNoTracking(),
+                    fine => fine.BorrowTransactionId,
+                    transaction => transaction.Id,
+                    (fine, transaction) => new
+                    {
+                        fine.Id,
+                        CardNumber = string.IsNullOrWhiteSpace(fine.CardNumber) ? transaction.CardNumber : fine.CardNumber,
+                        ReaderName = transaction.ReaderName,
+                        ReaderUsername = transaction.ReaderUsername,
+                        transaction.UserId
+                    })
+                .ToDictionaryAsync(
+                    item => item.Id,
+                    item => (object)new
+                    {
+                        item.CardNumber,
+                        item.ReaderName,
+                        item.ReaderUsername,
+                        item.UserId
+                    },
+                    cancellationToken);
+
         var recentRevenueResult = recentRevenue.Select(item => new
         {
             item.Id,
             item.SourceType,
             item.ReferenceId,
-            item.UserId,
-            item.CardNumber,
+            UserId = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, item.UserId, "UserId"),
+            CardNumber = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, item.CardNumber, "CardNumber"),
+            ReaderName = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, "", "ReaderName"),
+            ReaderUsername = GetRevenueReaderValue(item.ReferenceId, fineReaderLookup, "", "ReaderUsername"),
             item.Amount,
             item.Description,
             CreatedAt = ToIsoVietnam(item.CreatedAt)
@@ -3618,6 +3655,19 @@ public sealed class CirculationController : ControllerBase
             fineRevenueCount = await revenueRecordsQuery.CountAsync(item => item.SourceType == "FinePayment", cancellationToken),
             recentRevenue = recentRevenueResult
         };
+    }
+
+    private static string? GetRevenueReaderValue(
+        string referenceId,
+        IReadOnlyDictionary<Guid, object> fineReaderLookup,
+        string? fallback,
+        string propertyName)
+    {
+        if (!Guid.TryParse(referenceId, out var fineId) || !fineReaderLookup.TryGetValue(fineId, out var info))
+            return fallback;
+
+        var value = info.GetType().GetProperty(propertyName)?.GetValue(info)?.ToString();
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 
     private async Task<IReadOnlyList<object>> BuildTransactionsListAsync(
